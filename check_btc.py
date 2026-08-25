@@ -11,7 +11,10 @@ STEP = 1000
 
 def get_btc_price():
     url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
-    with urllib.request.urlopen(url, timeout=10) as r:
+    api_key = os.environ.get("COINGECKO_API_KEY")
+    headers = {"x-cg-demo-api-key": api_key} if api_key else {}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=10) as r:
         data = json.loads(r.read().decode())
     return data["bitcoin"]["usd"]
 
