@@ -64,7 +64,8 @@ def main():
 
     if threshold != last:
         direction = "subido" if threshold > last else "bajado"
-        msg = f"BTC ha {direction} y ha cruzado los {threshold:,} $ (precio actual: {price:,.0f} $)"
+        announced_level = last if direction == "bajado" else threshold
+        msg = f"BTC ha {direction} y ha cruzado los {announced_level:,} $ (precio actual: {price:,.0f} $)"
         print("AVISO:", msg)
         send_telegram(msg)
         send_email(msg)
