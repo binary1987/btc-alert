@@ -258,7 +258,7 @@ def detect_divergence(closes, order=3, min_distance=5, rsi_period=14):
 
 
 def compute_bollinger(closes, period=20, num_std=2):
-    """Devuelve (precio_actual, banda_superior, banda_inferior) o None si no hay datos suficientes."""
+    """Devuelve (precio_actual, sma, banda_superior, banda_inferior) o None."""
     if len(closes) < period:
         return None
 
@@ -271,14 +271,14 @@ def compute_bollinger(closes, period=20, num_std=2):
     lower = sma - num_std * std_dev
     current_price = closes[-1]
 
-    return current_price, upper, lower
+    return current_price, sma, upper, lower
 
 
 def describe_bollinger(bollinger_data):
     if bollinger_data is None:
         return "sin datos suficientes"
 
-    price, upper, lower = bollinger_data
+    price, sma, upper, lower = bollinger_data
 
     if price >= upper:
         return "🔺 tocando banda superior ⚠️ posible sobrecompra"
@@ -291,7 +291,7 @@ def bollinger_signal(bollinger_data):
     """Devuelve 'sobrecompra', 'sobreventa' o None, para usar en la alineación."""
     if bollinger_data is None:
         return None
-    price, upper, lower = bollinger_data
+    price, sma, upper, lower = bollinger_data
     if price >= upper:
         return "sobrecompra"
     if price <= lower:
@@ -337,6 +337,71 @@ def build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_dail
     return None
 
 
+def trend_label(bullish_count, bearish_count):
+    if bullish_count > bearish_count:
+        return "📈 Alcista"
+    if bearish_count > bullish_count:
+        return "📉 Bajista"
+    return "➖ Lateral / mixta"
+
+
+def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
+                           macd_weekly_hist, boll_daily, boll_weekly, fng_value):
+    corto_bull, corto_bear = 0, 0
+    if macd_daily_hist:
+        if macd_daily_hist[-1] >= 0:
+            corto_bull += 1
+        else:
+            corto_bear += 1
+    if rsi_daily is not None:
+        if rsi_daily > 50:
+            corto_bull += 1
+        else:
+            corto_bear += 1
+    if boll_daily is not None:
+        price, sma, upper, lower = boll_daily
+        if price > sma:
+            corto_bull += 1
+        else:
+            corto_bear += 1
+
+    medio_bull, medio_bear = 0, 0
+    if macd_weekly_hist:
+        if macd_weekly_hist[-1] >= 0:
+            medio_bull += 1
+        else:
+            medio_bear += 1
+    if rsi_weekly is not None:
+        if rsi_weekly > 50:
+            medio_bull += 1
+        else:
+            medio_bear += 1
+    if boll_weekly is not None:
+        price, sma, upper, lower = boll_weekly
+        if price > sma:
+            medio_bull += 1
+        else:
+            medio_bear += 1
+
+    largo_bull, largo_bear = 0, 0
+    if rsi_monthly is not None:
+        if rsi_monthly > 50:
+            largo_bull += 1
+        else:
+            largo_bear += 1
+    if fng_value is not None:
+        if fng_value > 50:
+            largo_bull += 1
+        else:
+            largo_bear += 1
+
+    return (
+        trend_label(corto_bull, corto_bear),
+        trend_label(medio_bull, medio_bear),
+        trend_label(largo_bull, largo_bear),
+    )
+
+
 def send_telegram(msg):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -379,6 +444,12 @@ def main():
 
     alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_daily_signal)
 
+    corto, medio, largo = compute_trend_summary(
+        rsi_daily, rsi_weekly, rsi_monthly,
+        macd_daily_hist, macd_weekly_hist,
+        boll_daily, boll_weekly, fng_value,
+    )
+
     lines = [
         "📊 Informe diario BTC",
         "----------------------------------",
@@ -398,6 +469,10 @@ def main():
         "----------------------------------",
         f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
         f"ATL: {atl_12m:,.0f} $ ({atl_12m_change:+.1f}%) (mínimo últimos 12 meses)",
+        "----------------------------------",
+        f"Tendencia corto plazo: {corto}",
+        f"Tendencia medio plazo: {medio}",
+        f"Tendencia largo plazo: {largo}",
     ]
 
     if alignment:
