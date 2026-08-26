@@ -17,7 +17,7 @@ IMPORTANCE_RANK_COMPRA = {
     "MACD linea < 0": 3,
     "F&G <= 46": 4,
     "RSI diario <= 25": 5,
-    "MACD hist rojo perdiendo fuerza": 6,
+    "MACD rojo claro perdiendo fuerza": 6,
 }
 
 IMPORTANCE_RANK_VENTA = {
@@ -26,7 +26,12 @@ IMPORTANCE_RANK_VENTA = {
     "MACD linea > 0": 3,
     "F&G >= 55": 4,
     "RSI diario >= 75": 5,
-    "MACD hist verde perdiendo fuerza": 6,
+    "MACD verde claro perdiendo fuerza": 6,
+}
+
+STH_CONDITION_NAMES = {
+    "Precio 10% por debajo de STH Realized Price",
+    "Precio 10% por encima de STH Realized Price",
 }
 
 
@@ -59,7 +64,7 @@ def send_telegram(msg):
     urllib.request.urlopen(url, data=data, timeout=10)
 
 
-def build_message(direction, tier, conditions, rank_map):
+def build_message(direction, tier, conditions, rank_map, sth_pct=None):
     emoji = "🟢" if direction == "COMPRA" else "🔴"
     total = len(conditions)
     estrellas = "⭐️" * tier
@@ -71,7 +76,11 @@ def build_message(direction, tier, conditions, rank_map):
         f"🔔{emoji} {direction} {estrellas}",
         f"Condiciones cumplidas: {tier}/{total}",
     ]
-    lines += [f"{rank}. {name}" for rank, name in cumplidas]
+    for rank, name in cumplidas:
+        line = f"{rank}. {name}"
+        if sth_pct is not None and name in STH_CONDITION_NAMES:
+            line += f": {sth_pct:+.0f}%"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -88,7 +97,7 @@ def main():
         print(f"Aviso: no se pudo obtener STH Realized Price ({e}), se ignora esa condicion")
         sth_realized_price = None
 
-    _, cond_compra, cond_venta = evaluate_strict_signal(
+    _, cond_compra, cond_venta, sth_pct = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value, sth_realized_price=sth_realized_price, required=6
     )
 
@@ -99,17 +108,19 @@ def main():
 
     print(f"Nivel COMPRA actual: {tier_compra_now}/{len(cond_compra)} (anterior: {last_compra})")
     print(f"Nivel VENTA actual: {tier_venta_now}/{len(cond_venta)} (anterior: {last_venta})")
+    if sth_pct is not None:
+        print(f"Distancia actual al STH Realized Price: {sth_pct:+.1f}%")
 
     notify_compra = tier_compra_now >= MIN_TIER_TO_NOTIFY and tier_compra_now > last_compra
     notify_venta = tier_venta_now >= MIN_TIER_TO_NOTIFY and tier_venta_now > last_venta
 
     if notify_compra:
-        msg = build_message("COMPRA", tier_compra_now, cond_compra, IMPORTANCE_RANK_COMPRA)
+        msg = build_message("COMPRA", tier_compra_now, cond_compra, IMPORTANCE_RANK_COMPRA, sth_pct)
         print("AVISO:", msg)
         send_telegram(msg)
 
     if notify_venta:
-        msg = build_message("VENTA", tier_venta_now, cond_venta, IMPORTANCE_RANK_VENTA)
+        msg = build_message("VENTA", tier_venta_now, cond_venta, IMPORTANCE_RANK_VENTA, sth_pct)
         print("AVISO:", msg)
         send_telegram(msg)
 
