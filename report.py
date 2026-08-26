@@ -115,7 +115,7 @@ def main():
 
     msg = (
         "📊 Informe diario BTC\n"
-        "-----------------------------\n"
+        "-----------------------------------\n"
         f"Fear & Greed: {fng_emoji} {fng_text} ({fng_value})\n"
         f"RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}\n"
         f"RSI semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}\n"
