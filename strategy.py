@@ -8,6 +8,7 @@ COMPRA (todas las condiciones deben cumplirse):
   - MACD histograma en rojo Y perdiendo fuerza (rojo claro)
   - Linea MACD por debajo de 0
   - Fear & Greed <= 46
+  - Precio por debajo del STH Realized Price (sobreventa on-chain)
 
 VENTA (todas las condiciones deben cumplirse):
   - RSI diario (14) >= 75
@@ -15,6 +16,7 @@ VENTA (todas las condiciones deben cumplirse):
   - MACD histograma en verde Y perdiendo fuerza (verde claro)
   - Linea MACD por encima de 0
   - Fear & Greed >= 55
+  - Precio por encima del STH Realized Price (sobrecompra on-chain)
 """
 from report import compute_rsi, compute_macd_histogram, ema_series
 
@@ -45,9 +47,9 @@ def macd_weakening(histogram):
     return abs(histogram[-1]) < abs(histogram[-2])
 
 
-def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, required=5):
+def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_price=None, required=5):
     """
-    Evalua las 5 condiciones de COMPRA y de VENTA.
+    Evalua las condiciones de COMPRA y de VENTA.
     Devuelve (señal_o_None, condiciones_compra, condiciones_venta)
     condiciones_* son diccionarios {texto: True/False}
     """
@@ -56,6 +58,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, required=5):
     macd_hist = compute_macd_histogram(daily_closes)
     macd_line = compute_macd_line(daily_closes)
     weak = macd_weakening(macd_hist)
+    current_price = daily_closes[-1]
 
     conditions_compra = {
         "RSI diario <= 25": rsi_daily is not None and rsi_daily <= 25,
@@ -65,6 +68,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, required=5):
         ),
         "MACD linea < 0": bool(len(macd_line) >= 1 and macd_line[-1] < 0),
         "F&G <= 46": fng_value is not None and fng_value <= 46,
+        "Precio < STH Realized Price": (
+            sth_realized_price is not None and current_price < sth_realized_price
+        ),
     }
 
     conditions_venta = {
@@ -75,6 +81,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, required=5):
         ),
         "MACD linea > 0": bool(len(macd_line) >= 1 and macd_line[-1] > 0),
         "F&G >= 55": fng_value is not None and fng_value >= 55,
+        "Precio > STH Realized Price": (
+            sth_realized_price is not None and current_price > sth_realized_price
+        ),
     }
 
     compra_count = sum(conditions_compra.values())
