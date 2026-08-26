@@ -40,7 +40,7 @@ def get_daily_prices(days=365):
     return data["prices"]
 
 
-def get_ath_atl():
+def get_ath():
     params = urllib.parse.urlencode({
         "localization": "false",
         "tickers": "false",
@@ -56,9 +56,7 @@ def get_ath_atl():
     md = data["market_data"]
     ath = md["ath"]["usd"]
     ath_change = md["ath_change_percentage"]["usd"]
-    atl = md["atl"]["usd"]
-    atl_change = md["atl_change_percentage"]["usd"]
-    return ath, ath_change, atl, atl_change
+    return ath, ath_change
 
 
 def get_fear_greed():
@@ -321,7 +319,11 @@ def main():
     fng_value, fng_text = get_fear_greed()
     fng_emoji = FNG_EMOJIS.get(fng_text, "")
 
-    ath, ath_change, atl, atl_change = get_ath_atl()
+    ath, ath_change = get_ath()
+
+    current_price = daily_closes[-1]
+    atl_12m = min(daily_closes)
+    atl_12m_change = ((current_price - atl_12m) / atl_12m) * 100
 
     alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly)
 
@@ -340,7 +342,7 @@ def main():
         f"Divergencia semanal: {div_weekly}",
         "----------------------------------",
         f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
-        f"ATL: {atl:,.0f} $ ({atl_change:+.0f}%)",
+        f"ATL: {atl_12m:,.0f} $ ({atl_12m_change:+.1f}%) (mínimo últimos 12 meses)",
     ]
 
     if alignment:
