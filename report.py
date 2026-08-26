@@ -60,3 +60,133 @@ def group_last(prices, keyfunc):
 
 def compute_rsi(closes, period=14):
     if len(closes) < 3:
+        return None
+
+    period = min(period, len(closes) - 1)
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [d if d > 0 else 0 for d in deltas]
+    losses = [-d if d < 0 else 0 for d in deltas]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    for i in range(period, len(deltas)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def zone_flag(rsi):
+    if rsi is None:
+        return ""
+    if rsi >= 75:
+        return " ⚠️ sobrecompra"
+    if rsi <= 25:
+        return " ⚠️ sobreventa"
+    return ""
+
+
+def ema_series(closes, period):
+    if len(closes) < period:
+        return []
+    k = 2 / (period + 1)
+    ema = [sum(closes[:period]) / period]
+    for price in closes[period:]:
+        ema.append(price * k + ema[-1] * (1 - k))
+    return ema
+
+
+def compute_macd_histogram(closes):
+    if len(closes) < 35:
+        return []
+
+    ema12_full = ema_series(closes, 12)
+    ema26_full = ema_series(closes, 26)
+
+    offset = len(ema12_full) - len(ema26_full)
+    ema12_aligned = ema12_full[offset:]
+
+    macd_line = [a - b for a, b in zip(ema12_aligned, ema26_full)]
+
+    signal_line = ema_series(macd_line, 9)
+    macd_aligned = macd_line[len(macd_line) - len(signal_line):]
+
+    histogram = [m - s for m, s in zip(macd_aligned, signal_line)]
+    return histogram
+
+
+def describe_macd(histogram):
+    if len(histogram) < 2:
+        return "sin datos suficientes"
+
+    today = histogram[-1]
+    yesterday = histogram[-2]
+
+    color_now = "verde" if today >= 0 else "rojo"
+    color_before = "verde" if yesterday >= 0 else "rojo"
+
+    strengthening = abs(today) > abs(yesterday)
+    shade = "oscuro" if strengthening else "claro"
+    emoji = "🟢" if color_now == "verde" else "🔴"
+    momentum_text = "impulso reforzándose" if strengthening else "impulso agotándose"
+
+    text = f"{emoji} {color_now} {shade} ({momentum_text})"
+
+    if color_now != color_before:
+        cruce = "cruce alcista hoy" if color_now == "verde" else "cruce bajista hoy"
+        text += f" ⚠️ {cruce}"
+
+    return text
+
+
+def send_telegram(msg):
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": msg}).encode()
+    urllib.request.urlopen(url, data=data, timeout=10)
+
+
+def main():
+    prices = get_daily_prices(days=365)
+
+    daily_closes = [p for _, p in prices]
+    weekly_closes = group_last(prices, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
+    monthly_closes = group_last(prices, lambda dt: (dt.year, dt.month))
+
+    rsi_daily = compute_rsi(daily_closes)
+    rsi_weekly = compute_rsi(weekly_closes)
+    rsi_monthly = compute_rsi(monthly_closes)
+
+    macd_daily_hist = compute_macd_histogram(daily_closes)
+    macd_weekly_hist = compute_macd_histogram(weekly_closes)
+    macd_monthly_hist = compute_macd_histogram(monthly_closes)
+
+    fng_value, fng_text = get_fear_greed()
+    fng_emoji = FNG_EMOJIS.get(fng_text, "")
+
+    msg = (
+        "📊 Informe diario BTC\n"
+        "----------------------------------\n"
+        f"Fear & Greed: {fng_emoji} {fng_text} ({fng_value})\n"
+        f"RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}\n"
+        f"RSI semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}\n"
+        f"RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}\n"
+        "----------------------------------\n"
+        f"MACD diario: {describe_macd(macd_daily_hist)}\n"
+        f"MACD semanal: {describe_macd(macd_weekly_hist)}\n"
+        f"MACD mensual: {describe_macd(macd_monthly_hist)}"
+    )
+
+    print(msg)
+    send_telegram(msg)
+
+
+if __name__ == "__main__":
+    main()
