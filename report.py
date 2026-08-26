@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import json
+import math
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
@@ -256,7 +257,49 @@ def detect_divergence(closes, order=3, min_distance=5, rsi_period=14):
     return "sin divergencia clara"
 
 
-def build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly):
+def compute_bollinger(closes, period=20, num_std=2):
+    """Devuelve (precio_actual, banda_superior, banda_inferior) o None si no hay datos suficientes."""
+    if len(closes) < period:
+        return None
+
+    window = closes[-period:]
+    sma = sum(window) / period
+    variance = sum((p - sma) ** 2 for p in window) / period
+    std_dev = math.sqrt(variance)
+
+    upper = sma + num_std * std_dev
+    lower = sma - num_std * std_dev
+    current_price = closes[-1]
+
+    return current_price, upper, lower
+
+
+def describe_bollinger(bollinger_data):
+    if bollinger_data is None:
+        return "sin datos suficientes"
+
+    price, upper, lower = bollinger_data
+
+    if price >= upper:
+        return "🔺 tocando banda superior ⚠️ posible sobrecompra"
+    if price <= lower:
+        return "🔻 tocando banda inferior ⚠️ posible sobreventa"
+    return "dentro de las bandas (normal)"
+
+
+def bollinger_signal(bollinger_data):
+    """Devuelve 'sobrecompra', 'sobreventa' o None, para usar en la alineación."""
+    if bollinger_data is None:
+        return None
+    price, upper, lower = bollinger_data
+    if price >= upper:
+        return "sobrecompra"
+    if price <= lower:
+        return "sobreventa"
+    return None
+
+
+def build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_daily_signal):
     bearish_reasons = []
     bullish_reasons = []
 
@@ -281,6 +324,11 @@ def build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly):
         bearish_reasons.append("divergencia semanal bajista")
     elif "alcista" in div_weekly:
         bullish_reasons.append("divergencia semanal alcista")
+
+    if boll_daily_signal == "sobrecompra":
+        bearish_reasons.append("Bollinger diario en sobrecompra")
+    elif boll_daily_signal == "sobreventa":
+        bullish_reasons.append("Bollinger diario en sobreventa")
 
     if len(bearish_reasons) >= 2:
         return f"🎯 Alineación bajista: {', '.join(bearish_reasons)} → posible giro bajista"
@@ -316,6 +364,10 @@ def main():
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
 
+    boll_daily = compute_bollinger(daily_closes)
+    boll_weekly = compute_bollinger(weekly_closes)
+    boll_daily_signal = bollinger_signal(boll_daily)
+
     fng_value, fng_text = get_fear_greed()
     fng_emoji = FNG_EMOJIS.get(fng_text, "")
 
@@ -325,7 +377,7 @@ def main():
     atl_12m = min(daily_closes)
     atl_12m_change = ((current_price - atl_12m) / atl_12m) * 100
 
-    alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly)
+    alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_daily_signal)
 
     lines = [
         "📊 Informe diario BTC",
@@ -340,6 +392,9 @@ def main():
         "----------------------------------",
         f"Divergencia diaria: {div_daily}",
         f"Divergencia semanal: {div_weekly}",
+        "----------------------------------",
+        f"Bollinger diario: {describe_bollinger(boll_daily)}",
+        f"Bollinger semanal: {describe_bollinger(boll_weekly)}",
         "----------------------------------",
         f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
         f"ATL: {atl_12m:,.0f} $ ({atl_12m_change:+.1f}%) (mínimo últimos 12 meses)",
