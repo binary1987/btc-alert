@@ -8,6 +8,9 @@ COMPRA (todas las condiciones deben cumplirse):
   - MACD histograma en rojo Y perdiendo fuerza (rojo claro)
   - Linea MACD por debajo de 0
   - Fear & Greed <= 46
+  - Precio 10% por debajo del STH Realized Price
+  - SMA200 diario <= -20%
+  - SMA50 semanal <= -20%
 
 VENTA (todas las condiciones deben cumplirse):
   - RSI diario (14) >= 75
@@ -15,8 +18,11 @@ VENTA (todas las condiciones deben cumplirse):
   - MACD histograma en verde Y perdiendo fuerza (verde claro)
   - Linea MACD por encima de 0
   - Fear & Greed >= 55
+  - Precio 10% por encima del STH Realized Price
+  - SMA200 diario >= 60%
+  - SMA50 semanal >= 50%
 """
-from report import compute_rsi, compute_macd_histogram, ema_series
+from report import compute_rsi, compute_macd_histogram, ema_series, compute_sma
 
 
 def compute_macd_line(closes):
@@ -48,10 +54,10 @@ def macd_weakening(histogram):
 def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_price=None, required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA.
-    Devuelve (señal_o_None, condiciones_compra, condiciones_venta, sth_pct_diff)
+    Devuelve (señal_o_None, condiciones_compra, condiciones_venta, pct_map)
     condiciones_* son diccionarios {texto: True/False}
-    sth_pct_diff es el % de distancia actual del precio respecto al STH Realized Price
-    (positivo si el precio esta por encima, negativo si esta por debajo), o None.
+    pct_map es un diccionario {texto_condicion: valor_%} para las condiciones
+    basadas en distancia porcentual, util para mostrar el dato real en el mensaje.
     """
     rsi_daily = compute_rsi(daily_closes)
     rsi_weekly = compute_rsi(weekly_closes)
@@ -64,6 +70,16 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     if sth_realized_price is not None and sth_realized_price != 0:
         sth_pct_diff = ((current_price - sth_realized_price) / sth_realized_price) * 100
 
+    sma200_daily = compute_sma(daily_closes, 200)
+    sma200_pct = None
+    if sma200_daily:
+        sma200_pct = ((current_price - sma200_daily) / sma200_daily) * 100
+
+    sma50_weekly = compute_sma(weekly_closes, 50)
+    sma50w_pct = None
+    if sma50_weekly:
+        sma50w_pct = ((current_price - sma50_weekly) / sma50_weekly) * 100
+
     conditions_compra = {
         "RSI diario <= 25": rsi_daily is not None and rsi_daily <= 25,
         "RSI semanal <= 40": rsi_weekly is not None and rsi_weekly <= 40,
@@ -75,6 +91,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         "Precio 10% por debajo de STH Realized Price": (
             sth_pct_diff is not None and sth_pct_diff <= -10
         ),
+        "SMA200 diario <= -20%": sma200_pct is not None and sma200_pct <= -20,
+        "SMA50 semanal <= -20%": sma50w_pct is not None and sma50w_pct <= -20,
     }
 
     conditions_venta = {
@@ -88,6 +106,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         "Precio 10% por encima de STH Realized Price": (
             sth_pct_diff is not None and sth_pct_diff >= 10
         ),
+        "SMA200 diario >= 60%": sma200_pct is not None and sma200_pct >= 60,
+        "SMA50 semanal >= 50%": sma50w_pct is not None and sma50w_pct >= 50,
     }
 
     compra_count = sum(conditions_compra.values())
@@ -99,4 +119,13 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     elif venta_count >= required:
         signal = "VENTA"
 
-    return signal, conditions_compra, conditions_venta, sth_pct_diff
+    pct_map = {
+        "Precio 10% por debajo de STH Realized Price": sth_pct_diff,
+        "Precio 10% por encima de STH Realized Price": sth_pct_diff,
+        "SMA200 diario <= -20%": sma200_pct,
+        "SMA200 diario >= 60%": sma200_pct,
+        "SMA50 semanal <= -20%": sma50w_pct,
+        "SMA50 semanal >= 50%": sma50w_pct,
+    }
+
+    return signal, conditions_compra, conditions_venta, pct_map
