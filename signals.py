@@ -9,30 +9,6 @@ from strategy import evaluate_strict_signal
 STATE_FILE = "last_tier.txt"
 MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones empezamos a avisar
 
-# Ranking fijo de importancia (1 = mas importante). Debe coincidir con las
-# claves usadas en strategy.evaluate_strict_signal para COMPRA y VENTA.
-IMPORTANCE_RANK_COMPRA = {
-    "Precio 10% por debajo de STH Realized Price": 1,
-    "RSI semanal <= 40": 2,
-    "MACD linea < 0": 3,
-    "F&G <= 46": 4,
-    "RSI diario <= 25": 5,
-    "MACD rojo claro perdiendo fuerza": 6,
-    "SMA200 diario <= -20%": 7,
-    "SMA50 semanal <= -20%": 8,
-}
-
-IMPORTANCE_RANK_VENTA = {
-    "Precio 30% por encima de STH Realized Price": 1,
-    "RSI semanal >= 60": 2,
-    "MACD linea > 0": 3,
-    "F&G >= 55": 4,
-    "RSI diario >= 75": 5,
-    "MACD verde claro perdiendo fuerza": 6,
-    "SMA200 diario >= 60%": 7,
-    "SMA50 semanal >= 50%": 8,
-}
-
 
 def read_last_tiers():
     """Devuelve (tier_compra, tier_venta) guardados, o (0, 0) si no existe estado previo."""
@@ -63,24 +39,29 @@ def send_telegram(msg):
     urllib.request.urlopen(url, data=data, timeout=10)
 
 
-def build_message(direction, tier, conditions, rank_map, pct_map=None):
+def build_message(direction, items):
+    tier = sum(1 for _, met, _, _ in items if met)
+    total = len(items)
     emoji = "🟢" if direction == "COMPRA" else "🔴"
     label = "ZONA DE COMPRA" if direction == "COMPRA" else "ZONA DE VENTA"
-    total = len(conditions)
     estrellas = "⭐️" * tier
-
-    cumplidas = [(rank_map.get(name, 99), name) for name, met in conditions.items() if met]
-    cumplidas.sort(key=lambda x: x[0])
 
     lines = [
         f"🔔{emoji} {label} {estrellas}",
         f"Condiciones cumplidas: {tier}/{total}",
+        "",
     ]
-    for rank, name in cumplidas:
-        line = f"{rank}. {name}"
-        if pct_map is not None and pct_map.get(name) is not None:
-            line += f": {pct_map[name]:+.0f}%"
+
+    for text, met, value, unit in items:
+        check = "✅" if met else "❌"
+        line = f"{check} {text}"
+        if value is not None:
+            if unit == "%":
+                line += f": {value:+.0f}%"
+            else:
+                line += f": {value:.0f}"
         lines.append(line)
+
     return "\n".join(lines)
 
 
@@ -97,28 +78,28 @@ def main():
         print(f"Aviso: no se pudo obtener STH Realized Price ({e}), se ignora esa condicion")
         sth_realized_price = None
 
-    _, cond_compra, cond_venta, pct_map = evaluate_strict_signal(
+    _, compra_items, venta_items = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value, sth_realized_price=sth_realized_price, required=8
     )
 
-    tier_compra_now = sum(cond_compra.values())
-    tier_venta_now = sum(cond_venta.values())
+    tier_compra_now = sum(1 for _, met, _, _ in compra_items if met)
+    tier_venta_now = sum(1 for _, met, _, _ in venta_items if met)
 
     last_compra, last_venta = read_last_tiers()
 
-    print(f"Nivel COMPRA actual: {tier_compra_now}/{len(cond_compra)} (anterior: {last_compra})")
-    print(f"Nivel VENTA actual: {tier_venta_now}/{len(cond_venta)} (anterior: {last_venta})")
+    print(f"Nivel COMPRA actual: {tier_compra_now}/{len(compra_items)} (anterior: {last_compra})")
+    print(f"Nivel VENTA actual: {tier_venta_now}/{len(venta_items)} (anterior: {last_venta})")
 
     notify_compra = tier_compra_now >= MIN_TIER_TO_NOTIFY and tier_compra_now > last_compra
     notify_venta = tier_venta_now >= MIN_TIER_TO_NOTIFY and tier_venta_now > last_venta
 
     if notify_compra:
-        msg = build_message("COMPRA", tier_compra_now, cond_compra, IMPORTANCE_RANK_COMPRA, pct_map)
+        msg = build_message("COMPRA", compra_items)
         print("AVISO:", msg)
         send_telegram(msg)
 
     if notify_venta:
-        msg = build_message("VENTA", tier_venta_now, cond_venta, IMPORTANCE_RANK_VENTA, pct_map)
+        msg = build_message("VENTA", venta_items)
         print("AVISO:", msg)
         send_telegram(msg)
 
