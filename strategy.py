@@ -8,7 +8,7 @@ COMPRA (todas las condiciones deben cumplirse):
   - MACD histograma en rojo Y perdiendo fuerza (rojo claro)
   - Linea MACD por debajo de 0
   - Fear & Greed <= 46
-  - Precio por debajo del STH Realized Price (sobreventa on-chain)
+  - Precio al menos 10% por debajo del STH Realized Price (sobreventa on-chain)
 
 VENTA (todas las condiciones deben cumplirse):
   - RSI diario (14) >= 75
@@ -16,7 +16,7 @@ VENTA (todas las condiciones deben cumplirse):
   - MACD histograma en verde Y perdiendo fuerza (verde claro)
   - Linea MACD por encima de 0
   - Fear & Greed >= 55
-  - Precio por encima del STH Realized Price (sobrecompra on-chain)
+  - Precio al menos 10% por encima del STH Realized Price (sobrecompra on-chain)
 """
 from report import compute_rsi, compute_macd_histogram, ema_series
 
@@ -60,6 +60,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     weak = macd_weakening(macd_hist)
     current_price = daily_closes[-1]
 
+    sth_lower_band = sth_realized_price * 0.90 if sth_realized_price is not None else None
+    sth_upper_band = sth_realized_price * 1.10 if sth_realized_price is not None else None
+
     conditions_compra = {
         "RSI diario <= 25": rsi_daily is not None and rsi_daily <= 25,
         "RSI semanal <= 40": rsi_weekly is not None and rsi_weekly <= 40,
@@ -68,8 +71,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ),
         "MACD linea < 0": bool(len(macd_line) >= 1 and macd_line[-1] < 0),
         "F&G <= 46": fng_value is not None and fng_value <= 46,
-        "Precio < STH Realized Price": (
-            sth_realized_price is not None and current_price < sth_realized_price
+        "Precio 10% bajo STH Realized Price": (
+            sth_lower_band is not None and current_price < sth_lower_band
         ),
     }
 
@@ -81,8 +84,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ),
         "MACD linea > 0": bool(len(macd_line) >= 1 and macd_line[-1] > 0),
         "F&G >= 55": fng_value is not None and fng_value >= 55,
-        "Precio > STH Realized Price": (
-            sth_realized_price is not None and current_price > sth_realized_price
+        "Precio 10% sobre STH Realized Price": (
+            sth_upper_band is not None and current_price > sth_upper_band
         ),
     }
 
