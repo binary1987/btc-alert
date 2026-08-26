@@ -65,6 +65,7 @@ def send_telegram(msg):
 
 def build_message(direction, tier, conditions, rank_map, pct_map=None):
     emoji = "🟢" if direction == "COMPRA" else "🔴"
+    label = "ZONA DE COMPRA" if direction == "COMPRA" else "ZONA DE VENTA"
     total = len(conditions)
     estrellas = "⭐️" * tier
 
@@ -72,7 +73,7 @@ def build_message(direction, tier, conditions, rank_map, pct_map=None):
     cumplidas.sort(key=lambda x: x[0])
 
     lines = [
-        f"🔔{emoji} {direction} {estrellas}",
+        f"🔔{emoji} {label} {estrellas}",
         f"Condiciones cumplidas: {tier}/{total}",
     ]
     for rank, name in cumplidas:
