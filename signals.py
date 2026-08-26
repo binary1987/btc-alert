@@ -9,6 +9,26 @@ from strategy import evaluate_strict_signal
 STATE_FILE = "last_tier.txt"
 MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones empezamos a avisar
 
+# Ranking fijo de importancia (1 = mas importante). Debe coincidir con las
+# claves usadas en strategy.evaluate_strict_signal para COMPRA y VENTA.
+IMPORTANCE_RANK_COMPRA = {
+    "Precio < STH Realized Price": 1,
+    "RSI semanal <= 40": 2,
+    "MACD linea < 0": 3,
+    "F&G <= 46": 4,
+    "RSI diario <= 25": 5,
+    "MACD hist rojo perdiendo fuerza": 6,
+}
+
+IMPORTANCE_RANK_VENTA = {
+    "Precio > STH Realized Price": 1,
+    "RSI semanal >= 60": 2,
+    "MACD linea > 0": 3,
+    "F&G >= 55": 4,
+    "RSI diario >= 75": 5,
+    "MACD hist verde perdiendo fuerza": 6,
+}
+
 
 def read_last_tiers():
     """Devuelve (tier_compra, tier_venta) guardados, o (0, 0) si no existe estado previo."""
@@ -39,16 +59,19 @@ def send_telegram(msg):
     urllib.request.urlopen(url, data=data, timeout=10)
 
 
-def build_message(direction, tier, conditions):
+def build_message(direction, tier, conditions, rank_map):
     emoji = "🟢" if direction == "COMPRA" else "🔴"
     total = len(conditions)
     estrellas = "⭐️" * tier
-    cumplidas = [name for name, met in conditions.items() if met]
+
+    cumplidas = [(rank_map.get(name, 99), name) for name, met in conditions.items() if met]
+    cumplidas.sort(key=lambda x: x[0])
+
     lines = [
-        f"🔔{emoji} {direction}  {estrellas}",
+        f"🔔{emoji} {direction} {estrellas}",
         f"Condiciones cumplidas: {tier}/{total}",
     ]
-    lines += [f"- {c}" for c in cumplidas]
+    lines += [f"{rank}. {name}" for rank, name in cumplidas]
     return "\n".join(lines)
 
 
@@ -81,12 +104,12 @@ def main():
     notify_venta = tier_venta_now >= MIN_TIER_TO_NOTIFY and tier_venta_now > last_venta
 
     if notify_compra:
-        msg = build_message("COMPRA", tier_compra_now, cond_compra)
+        msg = build_message("COMPRA", tier_compra_now, cond_compra, IMPORTANCE_RANK_COMPRA)
         print("AVISO:", msg)
         send_telegram(msg)
 
     if notify_venta:
-        msg = build_message("VENTA", tier_venta_now, cond_venta)
+        msg = build_message("VENTA", tier_venta_now, cond_venta, IMPORTANCE_RANK_VENTA)
         print("AVISO:", msg)
         send_telegram(msg)
 
