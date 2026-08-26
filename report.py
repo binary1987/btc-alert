@@ -32,13 +32,14 @@ def cg_headers():
     return {"x-cg-demo-api-key": api_key} if api_key else {}
 
 
-def get_daily_prices(days=365):
+def get_market_chart(days=365):
+    """Devuelve (prices, volumes), ambos como listas de [timestamp_ms, valor]."""
     params = urllib.parse.urlencode({"vs_currency": "usd", "days": days})
     url = f"{MARKET_CHART_URL}?{params}"
     req = urllib.request.Request(url, headers=cg_headers())
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read().decode())
-    return data["prices"]
+    return data["prices"], data["total_volumes"]
 
 
 def get_ath():
@@ -288,7 +289,6 @@ def describe_bollinger(bollinger_data):
 
 
 def bollinger_signal(bollinger_data):
-    """Devuelve 'sobrecompra', 'sobreventa' o None, para usar en la alineación."""
     if bollinger_data is None:
         return None
     price, sma, upper, lower = bollinger_data
@@ -345,8 +345,54 @@ def trend_label(bullish_count, bearish_count):
     return "➖ Lateral / mixta"
 
 
+def compute_sma(closes, period):
+    if len(closes) < period:
+        return None
+    return sum(closes[-period:]) / period
+
+
+def compute_roc(closes, period):
+    """Tasa de cambio (%) entre el precio actual y el de hace 'period' velas."""
+    if len(closes) <= period:
+        return None
+    past = closes[-period - 1]
+    current = closes[-1]
+    if past == 0:
+        return None
+    return ((current - past) / past) * 100
+
+
+def compute_volume_confirmation(daily_closes, daily_volumes, avg_period=30):
+    """
+    Compara el volumen de hoy contra la media de los últimos N días.
+    Si el precio subió con volumen alto -> confirmación alcista.
+    Si el precio bajó con volumen alto -> confirmación bajista.
+    """
+    if len(daily_volumes) < avg_period + 1 or len(daily_closes) < 2:
+        return None
+
+    avg_volume = sum(daily_volumes[-avg_period - 1:-1]) / avg_period
+    today_volume = daily_volumes[-1]
+
+    if avg_volume == 0:
+        return None
+
+    relative_volume = today_volume / avg_volume
+    price_change = daily_closes[-1] - daily_closes[-2]
+
+    if relative_volume < 1.2:
+        return None
+
+    if price_change > 0:
+        return "alcista"
+    if price_change < 0:
+        return "bajista"
+    return None
+
+
 def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
-                           macd_weekly_hist, boll_daily, boll_weekly, fng_value):
+                           macd_weekly_hist, boll_daily, boll_weekly, fng_value,
+                           daily_closes, daily_volumes):
     corto_bull, corto_bear = 0, 0
     if macd_daily_hist:
         if macd_daily_hist[-1] >= 0:
@@ -364,6 +410,19 @@ def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
             corto_bull += 1
         else:
             corto_bear += 1
+
+    roc_7 = compute_roc(daily_closes, 7)
+    if roc_7 is not None:
+        if roc_7 > 0:
+            corto_bull += 1
+        else:
+            corto_bear += 1
+
+    vol_confirm = compute_volume_confirmation(daily_closes, daily_volumes)
+    if vol_confirm == "alcista":
+        corto_bull += 1
+    elif vol_confirm == "bajista":
+        corto_bear += 1
 
     medio_bull, medio_bear = 0, 0
     if macd_weekly_hist:
@@ -383,6 +442,13 @@ def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
         else:
             medio_bear += 1
 
+    roc_30 = compute_roc(daily_closes, 30)
+    if roc_30 is not None:
+        if roc_30 > 0:
+            medio_bull += 1
+        else:
+            medio_bear += 1
+
     largo_bull, largo_bear = 0, 0
     if rsi_monthly is not None:
         if rsi_monthly > 50:
@@ -391,6 +457,21 @@ def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
             largo_bear += 1
     if fng_value is not None:
         if fng_value > 50:
+            largo_bull += 1
+        else:
+            largo_bear += 1
+
+    sma50 = compute_sma(daily_closes, 50)
+    sma200 = compute_sma(daily_closes, 200)
+    if sma50 is not None and sma200 is not None:
+        if sma50 > sma200:
+            largo_bull += 1
+        else:
+            largo_bear += 1
+
+    roc_90 = compute_roc(daily_closes, 90)
+    if roc_90 is not None:
+        if roc_90 > 0:
             largo_bull += 1
         else:
             largo_bear += 1
@@ -413,9 +494,10 @@ def send_telegram(msg):
 
 
 def main():
-    prices = get_daily_prices(days=365)
+    prices, volumes = get_market_chart(days=365)
 
     daily_closes = [p for _, p in prices]
+    daily_volumes = [v for _, v in volumes]
     weekly_closes = group_last(prices, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
     monthly_closes = group_last(prices, lambda dt: (dt.year, dt.month))
 
@@ -448,6 +530,7 @@ def main():
         rsi_daily, rsi_weekly, rsi_monthly,
         macd_daily_hist, macd_weekly_hist,
         boll_daily, boll_weekly, fng_value,
+        daily_closes, daily_volumes,
     )
 
     lines = [
