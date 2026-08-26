@@ -86,6 +86,18 @@ def get_fear_greed_history(limit=400):
     return history
 
 
+def get_sth_realized_price():
+    """Devuelve el ultimo valor del STH Realized Price (dato diario, no historico)."""
+    url = "https://raw.githubusercontent.com/BGeometrics/bgeometrics.github.io/master/files/sth_realized_price_latest.csv"
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        text = r.read().decode()
+    lines = text.strip().split("\n")
+    last_line = lines[-1]
+    parts = last_line.split(",")
+    return float(parts[2])
+
+
 def group_last(prices, keyfunc):
     groups = {}
     order = []
@@ -397,7 +409,7 @@ def compute_volume_confirmation(daily_closes, daily_volumes, avg_period=30):
     price_change = daily_closes[-1] - daily_closes[-2]
 
     if relative_volume < 1.2:
-        return None
+        return None  # volumen normal, sin confirmación extra
 
     if price_change > 0:
         return "alcista"
@@ -409,6 +421,7 @@ def compute_volume_confirmation(daily_closes, daily_volumes, avg_period=30):
 def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
                            macd_weekly_hist, boll_daily, boll_weekly, fng_value,
                            daily_closes, daily_volumes):
+    # --- Corto plazo ---
     corto_bull, corto_bear = 0, 0
     if macd_daily_hist:
         if macd_daily_hist[-1] >= 0:
@@ -440,6 +453,7 @@ def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
     elif vol_confirm == "bajista":
         corto_bear += 1
 
+    # --- Medio plazo ---
     medio_bull, medio_bear = 0, 0
     if macd_weekly_hist:
         if macd_weekly_hist[-1] >= 0:
@@ -465,6 +479,7 @@ def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
         else:
             medio_bear += 1
 
+    # --- Largo plazo ---
     largo_bull, largo_bear = 0, 0
     if rsi_monthly is not None:
         if rsi_monthly > 50:
