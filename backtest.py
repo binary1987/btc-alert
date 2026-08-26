@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
 """
-Backtest de la ESTRATEGIA ESTRICTA (5 condiciones fijas de compra/venta).
+Backtest de la ESTRATEGIA ESTRICTA con desglose por condicion individual.
 Recorre el historico dia a dia usando solo datos disponibles hasta esa
 fecha (sin mirar al futuro). Ejecucion de un solo uso, no se programa.
-
-Muestra:
-  - Los dias donde se cumplieron las 5 condiciones (señal completa)
-  - Un resumen de cuantas condiciones (0 a 5) se cumplieron cada dia,
-    para ver que tan cerca ha estado la estrategia de dispararse aunque
-    no llegue a las 5, y decidir si conviene bajar el requisito.
 """
 from collections import Counter
 from datetime import datetime, timezone
@@ -26,8 +20,10 @@ def main():
 
     all_daily_closes = [p for _, p in prices]
 
-    compra_counts = Counter()
-    venta_counts = Counter()
+    compra_combo_counts = Counter()
+    venta_combo_counts = Counter()
+    compra_individual = Counter()
+    venta_individual = Counter()
     signals_found = []
     dias_sin_fng = 0
     dias_evaluados = 0
@@ -52,8 +48,15 @@ def main():
         )
 
         dias_evaluados += 1
-        compra_counts[sum(cond_compra.values())] += 1
-        venta_counts[sum(cond_venta.values())] += 1
+        compra_combo_counts[sum(cond_compra.values())] += 1
+        venta_combo_counts[sum(cond_venta.values())] += 1
+
+        for name, met in cond_compra.items():
+            if met:
+                compra_individual[name] += 1
+        for name, met in cond_venta.items():
+            if met:
+                venta_individual[name] += 1
 
         if signal:
             price_then = daily_closes_so_far[-1]
@@ -78,11 +81,23 @@ def main():
     print("\n" + "=" * 60)
     print("DISTRIBUCION: cuantas condiciones de COMPRA se cumplieron cada dia")
     for n in range(5, -1, -1):
-        print(f"  {n}/5 condiciones: {compra_counts.get(n, 0)} dias")
+        print(f"  {n}/5 condiciones: {compra_combo_counts.get(n, 0)} dias")
 
     print("\nDISTRIBUCION: cuantas condiciones de VENTA se cumplieron cada dia")
     for n in range(5, -1, -1):
-        print(f"  {n}/5 condiciones: {venta_counts.get(n, 0)} dias")
+        print(f"  {n}/5 condiciones: {venta_combo_counts.get(n, 0)} dias")
+
+    print("\n" + "=" * 60)
+    print(f"DESGLOSE POR CONDICION INDIVIDUAL (sobre {dias_evaluados} dias evaluados)")
+    print("\n--- COMPRA ---")
+    for name, count in compra_individual.items():
+        pct = (count / dias_evaluados) * 100
+        print(f"  {name}: {count} dias ({pct:.0f}%)")
+
+    print("\n--- VENTA ---")
+    for name, count in venta_individual.items():
+        pct = (count / dias_evaluados) * 100
+        print(f"  {name}: {count} dias ({pct:.0f}%)")
 
 
 if __name__ == "__main__":
