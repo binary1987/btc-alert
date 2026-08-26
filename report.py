@@ -71,6 +71,21 @@ def get_fear_greed():
     return value, FNG_TRANSLATIONS.get(classification, classification)
 
 
+def get_fear_greed_history(limit=400):
+    """Devuelve un diccionario {'YYYY-MM-DD': valor int} con el historico de F&G."""
+    params = urllib.parse.urlencode({"limit": limit, "format": "json"})
+    url = f"https://api.alternative.me/fng/?{params}"
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.loads(r.read().decode())
+    history = {}
+    for entry in data["data"]:
+        ts = int(entry["timestamp"])
+        date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        history[date_str] = int(entry["value"])
+    return history
+
+
 def group_last(prices, keyfunc):
     groups = {}
     order = []
@@ -367,6 +382,7 @@ def compute_volume_confirmation(daily_closes, daily_volumes, avg_period=30):
     Compara el volumen de hoy contra la media de los últimos N días.
     Si el precio subió con volumen alto -> confirmación alcista.
     Si el precio bajó con volumen alto -> confirmación bajista.
+    Devuelve 'alcista', 'bajista' o None (sin señal clara).
     """
     if len(daily_volumes) < avg_period + 1 or len(daily_closes) < 2:
         return None
