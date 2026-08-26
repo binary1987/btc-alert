@@ -42,8 +42,6 @@ def send_telegram(msg):
 def build_message(direction, items):
     conditions_met = sum(1 for _, pts, _, _, _ in items if pts >= 1)
     total_conditions = len(items)
-    score = sum(pts for _, pts, _, _, _ in items)
-    max_score = sum(2 if unit == "%" else 1 for _, _, _, unit, _ in items)
 
     emoji = "🟢" if direction == "COMPRA" else "🔴"
     label = "ZONA DE COMPRA" if direction == "COMPRA" else "ZONA DE VENTA"
@@ -52,7 +50,6 @@ def build_message(direction, items):
     lines = [
         f"🔔{emoji} {label} {estrellas}",
         f"Condiciones cumplidas: {conditions_met}/{total_conditions}",
-        f"Puntuación ponderada: {score}/{max_score}",
         "",
     ]
 
