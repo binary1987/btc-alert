@@ -166,7 +166,6 @@ def main():
 
     macd_daily_hist = compute_macd_histogram(daily_closes)
     macd_weekly_hist = compute_macd_histogram(weekly_closes)
-    macd_monthly_hist = compute_macd_histogram(monthly_closes)
 
     fng_value, fng_text = get_fear_greed()
     fng_emoji = FNG_EMOJIS.get(fng_text, "")
@@ -180,8 +179,7 @@ def main():
         f"RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}\n"
         "----------------------------------\n"
         f"MACD diario: {describe_macd(macd_daily_hist)}\n"
-        f"MACD semanal: {describe_macd(macd_weekly_hist)}\n"
-        f"MACD mensual: {describe_macd(macd_monthly_hist)}"
+        f"MACD semanal: {describe_macd(macd_weekly_hist)}"
     )
 
     print(msg)
