@@ -71,7 +71,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ),
         "MACD linea < 0": bool(len(macd_line) >= 1 and macd_line[-1] < 0),
         "F&G <= 46": fng_value is not None and fng_value <= 46,
-        "Precio 10% bajo STH Realized Price": (
+        "Precio 10% por debajo de STH Realized Price": (
             sth_lower_band is not None and current_price < sth_lower_band
         ),
     }
@@ -84,7 +84,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ),
         "MACD linea > 0": bool(len(macd_line) >= 1 and macd_line[-1] > 0),
         "F&G >= 55": fng_value is not None and fng_value >= 55,
-        "Precio 10% sobre STH Realized Price": (
+        "Precio 10% por encima de STH Realized Price": (
             sth_upper_band is not None and current_price > sth_upper_band
         ),
     }
