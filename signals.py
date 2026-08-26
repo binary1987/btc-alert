@@ -7,7 +7,7 @@ from report import get_market_chart, group_last, get_fear_greed, get_sth_realize
 from strategy import evaluate_strict_signal
 
 STATE_FILE = "last_tier.txt"
-MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones empezamos a avisar
+MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones activas empezamos a avisar
 
 
 def read_last_tiers():
@@ -40,26 +40,32 @@ def send_telegram(msg):
 
 
 def build_message(direction, items):
-    tier = sum(1 for _, met, _, _ in items if met)
-    total = len(items)
+    conditions_met = sum(1 for _, pts, _, _, _ in items if pts >= 1)
+    total_conditions = len(items)
+    score = sum(pts for _, pts, _, _, _ in items)
+    max_score = sum(2 if unit == "%" else 1 for _, _, _, unit, _ in items)
+
     emoji = "🟢" if direction == "COMPRA" else "🔴"
     label = "ZONA DE COMPRA" if direction == "COMPRA" else "ZONA DE VENTA"
-    estrellas = "⭐️" * tier
+    estrellas = "⭐️" * conditions_met
 
     lines = [
         f"🔔{emoji} {label} {estrellas}",
-        f"Condiciones cumplidas: {tier}/{total}",
+        f"Condiciones cumplidas: {conditions_met}/{total_conditions}",
+        f"Puntuación ponderada: {score}/{max_score}",
         "",
     ]
 
-    for text, met, value, unit in items:
-        check = "✅" if met else "❌"
+    for text, pts, value, unit, is_strong in items:
+        check = "✅" if pts >= 1 else "❌"
         line = f"{check} {text}"
         if value is not None:
             if unit == "%":
                 line += f": {value:+.0f}%"
             else:
                 line += f": {value:.0f}"
+        if is_strong:
+            line += " 🔥 (fuerte)"
         lines.append(line)
 
     return "\n".join(lines)
@@ -82,8 +88,8 @@ def main():
         daily_closes, weekly_closes, fng_value, sth_realized_price=sth_realized_price, required=8
     )
 
-    tier_compra_now = sum(1 for _, met, _, _ in compra_items if met)
-    tier_venta_now = sum(1 for _, met, _, _ in venta_items if met)
+    tier_compra_now = sum(1 for _, pts, _, _, _ in compra_items if pts >= 1)
+    tier_venta_now = sum(1 for _, pts, _, _, _ in venta_items if pts >= 1)
 
     last_compra, last_venta = read_last_tiers()
 
