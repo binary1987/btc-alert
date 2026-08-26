@@ -8,7 +8,6 @@ COMPRA (todas las condiciones deben cumplirse):
   - MACD histograma en rojo Y perdiendo fuerza (rojo claro)
   - Linea MACD por debajo de 0
   - Fear & Greed <= 46
-  - Precio al menos 10% por debajo del STH Realized Price (sobreventa on-chain)
 
 VENTA (todas las condiciones deben cumplirse):
   - RSI diario (14) >= 75
@@ -16,7 +15,6 @@ VENTA (todas las condiciones deben cumplirse):
   - MACD histograma en verde Y perdiendo fuerza (verde claro)
   - Linea MACD por encima de 0
   - Fear & Greed >= 55
-  - Precio al menos 10% por encima del STH Realized Price (sobrecompra on-chain)
 """
 from report import compute_rsi, compute_macd_histogram, ema_series
 
@@ -50,8 +48,10 @@ def macd_weakening(histogram):
 def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_price=None, required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA.
-    Devuelve (señal_o_None, condiciones_compra, condiciones_venta)
+    Devuelve (señal_o_None, condiciones_compra, condiciones_venta, sth_pct_diff)
     condiciones_* son diccionarios {texto: True/False}
+    sth_pct_diff es el % de distancia actual del precio respecto al STH Realized Price
+    (positivo si el precio esta por encima, negativo si esta por debajo), o None.
     """
     rsi_daily = compute_rsi(daily_closes)
     rsi_weekly = compute_rsi(weekly_closes)
@@ -60,32 +60,33 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     weak = macd_weakening(macd_hist)
     current_price = daily_closes[-1]
 
-    sth_lower_band = sth_realized_price * 0.90 if sth_realized_price is not None else None
-    sth_upper_band = sth_realized_price * 1.10 if sth_realized_price is not None else None
+    sth_pct_diff = None
+    if sth_realized_price is not None and sth_realized_price != 0:
+        sth_pct_diff = ((current_price - sth_realized_price) / sth_realized_price) * 100
 
     conditions_compra = {
         "RSI diario <= 25": rsi_daily is not None and rsi_daily <= 25,
         "RSI semanal <= 40": rsi_weekly is not None and rsi_weekly <= 40,
-        "MACD hist rojo perdiendo fuerza": bool(
+        "MACD rojo claro perdiendo fuerza": bool(
             len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak
         ),
         "MACD linea < 0": bool(len(macd_line) >= 1 and macd_line[-1] < 0),
         "F&G <= 46": fng_value is not None and fng_value <= 46,
         "Precio 10% por debajo de STH Realized Price": (
-            sth_lower_band is not None and current_price < sth_lower_band
+            sth_pct_diff is not None and sth_pct_diff <= -10
         ),
     }
 
     conditions_venta = {
         "RSI diario >= 75": rsi_daily is not None and rsi_daily >= 75,
         "RSI semanal >= 60": rsi_weekly is not None and rsi_weekly >= 60,
-        "MACD hist verde perdiendo fuerza": bool(
+        "MACD verde claro perdiendo fuerza": bool(
             len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak
         ),
         "MACD linea > 0": bool(len(macd_line) >= 1 and macd_line[-1] > 0),
         "F&G >= 55": fng_value is not None and fng_value >= 55,
         "Precio 10% por encima de STH Realized Price": (
-            sth_upper_band is not None and current_price > sth_upper_band
+            sth_pct_diff is not None and sth_pct_diff >= 10
         ),
     }
 
@@ -98,4 +99,4 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     elif venta_count >= required:
         signal = "VENTA"
 
-    return signal, conditions_compra, conditions_venta
+    return signal, conditions_compra, conditions_venta, sth_pct_diff
