@@ -514,6 +514,24 @@ def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
     )
 
 
+def historical_zone_flag(pct, buy_threshold, sell_threshold, buy_strong=None, sell_strong=None):
+    """
+    Marca si un % de distancia entra en zona historica de capitulacion (compra)
+    o de euforia (venta), segun umbrales de referencia del propio indicador.
+    """
+    if pct is None:
+        return ""
+    if buy_strong is not None and pct <= buy_strong:
+        return " ⚠️ zona de capitulación histórica (fuerte)"
+    if pct <= buy_threshold:
+        return " ⚠️ zona de capitulación histórica"
+    if sell_strong is not None and pct >= sell_strong:
+        return " ⚠️ zona de euforia histórica (fuerte)"
+    if pct >= sell_threshold:
+        return " ⚠️ zona de euforia histórica"
+    return ""
+
+
 def send_telegram(msg):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -608,11 +626,14 @@ def main():
     ]
 
     if sth_pct is not None:
-        lines.append(f"Distancia a STH Realized Price: {sth_pct:+.1f}%")
+        flag = historical_zone_flag(sth_pct, buy_threshold=-10, sell_threshold=30, buy_strong=-20, sell_strong=50)
+        lines.append(f"Distancia a STH Realized Price: {sth_pct:+.1f}%{flag}")
     if sma200_pct is not None:
-        lines.append(f"Distancia a SMA200 diario: {sma200_pct:+.1f}%")
+        flag = historical_zone_flag(sma200_pct, buy_threshold=-20, sell_threshold=60, buy_strong=-30, sell_strong=100)
+        lines.append(f"Distancia a SMA200 diario: {sma200_pct:+.1f}%{flag}")
     if sma50w_pct is not None:
-        lines.append(f"Distancia a SMA50 semanal: {sma50w_pct:+.1f}%")
+        flag = historical_zone_flag(sma50w_pct, buy_threshold=-20, sell_threshold=50, buy_strong=-30, sell_strong=80)
+        lines.append(f"Distancia a SMA50 semanal: {sma50w_pct:+.1f}%{flag}")
 
     lines += [
         "----------------------------------",
