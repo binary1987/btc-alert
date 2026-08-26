@@ -41,8 +41,9 @@ def send_telegram(msg):
 
 def build_message(direction, tier, conditions):
     emoji = "🟢" if direction == "COMPRA" else "🔴"
+    estrellas = "⭐" * tier
     cumplidas = [name for name, met in conditions.items() if met]
-    lines = [f"🔔 Nivel {direction} {tier}/5 {emoji}", "Condiciones cumplidas:"]
+    lines = [f"🔔 Nivel {direction} {tier}/5 {emoji} {estrellas}", "Condiciones cumplidas:"]
     lines += [f"- {c}" for c in cumplidas]
     return "\n".join(lines)
 
