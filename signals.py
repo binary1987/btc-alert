@@ -3,11 +3,11 @@ import os
 import urllib.request
 import urllib.parse
 
-from report import get_market_chart, group_last, get_fear_greed
+from report import get_market_chart, group_last, get_fear_greed, get_sth_realized_price
 from strategy import evaluate_strict_signal
 
 STATE_FILE = "last_tier.txt"
-MIN_TIER_TO_NOTIFY = 3  # a partir de 3/5 empezamos a avisar
+MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones empezamos a avisar
 
 
 def read_last_tiers():
@@ -41,11 +41,12 @@ def send_telegram(msg):
 
 def build_message(direction, tier, conditions):
     emoji = "🟢" if direction == "COMPRA" else "🔴"
+    total = len(conditions)
     estrellas = "⭐️" * tier
     cumplidas = [name for name, met in conditions.items() if met]
     lines = [
         f"🔔{emoji} {direction}  {estrellas}",
-        f"Condiciones cumplidas: {tier}/5",
+        f"Condiciones cumplidas: {tier}/{total}",
     ]
     lines += [f"- {c}" for c in cumplidas]
     return "\n".join(lines)
@@ -58,8 +59,14 @@ def main():
 
     fng_value, _ = get_fear_greed()
 
+    try:
+        sth_realized_price = get_sth_realized_price()
+    except Exception as e:
+        print(f"Aviso: no se pudo obtener STH Realized Price ({e}), se ignora esa condicion")
+        sth_realized_price = None
+
     _, cond_compra, cond_venta = evaluate_strict_signal(
-        daily_closes, weekly_closes, fng_value, required=5
+        daily_closes, weekly_closes, fng_value, sth_realized_price=sth_realized_price, required=6
     )
 
     tier_compra_now = sum(cond_compra.values())
@@ -67,8 +74,8 @@ def main():
 
     last_compra, last_venta = read_last_tiers()
 
-    print(f"Nivel COMPRA actual: {tier_compra_now}/5 (anterior: {last_compra})")
-    print(f"Nivel VENTA actual: {tier_venta_now}/5 (anterior: {last_venta})")
+    print(f"Nivel COMPRA actual: {tier_compra_now}/{len(cond_compra)} (anterior: {last_compra})")
+    print(f"Nivel VENTA actual: {tier_venta_now}/{len(cond_venta)} (anterior: {last_venta})")
 
     notify_compra = tier_compra_now >= MIN_TIER_TO_NOTIFY and tier_compra_now > last_compra
     notify_venta = tier_venta_now >= MIN_TIER_TO_NOTIFY and tier_venta_now > last_venta
