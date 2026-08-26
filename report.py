@@ -16,6 +16,14 @@ FNG_TRANSLATIONS = {
     "Extreme Greed": "Codicia Extrema",
 }
 
+FNG_EMOJIS = {
+    "Miedo Extremo": "😱",
+    "Miedo": "😨",
+    "Neutral": "😐",
+    "Codicia": "🤑",
+    "Codicia Extrema": "🔥",
+}
+
 
 def get_daily_prices(days=365):
     api_key = os.environ.get("COINGECKO_API_KEY")
@@ -25,7 +33,7 @@ def get_daily_prices(days=365):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read().decode())
-    return data["prices"]  # lista de [timestamp_ms, precio]
+    return data["prices"]
 
 
 def get_fear_greed():
@@ -103,13 +111,15 @@ def main():
     rsi_monthly = compute_rsi(monthly_closes)
 
     fng_value, fng_text = get_fear_greed()
+    fng_emoji = FNG_EMOJIS.get(fng_text, "")
 
     msg = (
         "📊 Informe diario BTC\n"
-        f"🧭 Fear & Greed: {fng_text} ({fng_value})\n"
-        f"📈 RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}\n"
-        f"📈 RSI semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}\n"
-        f"📈 RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}"
+        "-----------------------------\n"
+        f"Fear & Greed: {fng_emoji} {fng_text} ({fng_value})\n"
+        f"RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}\n"
+        f"RSI semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}\n"
+        f"RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}"
     )
 
     print(msg)
