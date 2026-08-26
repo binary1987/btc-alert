@@ -5,7 +5,8 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
 
-COINGECKO_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+MARKET_CHART_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+COIN_DATA_URL = "https://api.coingecko.com/api/v3/coins/bitcoin"
 FNG_URL = "https://api.alternative.me/fng/?limit=1&format=json"
 
 FNG_TRANSLATIONS = {
@@ -25,15 +26,39 @@ FNG_EMOJIS = {
 }
 
 
-def get_daily_prices(days=365):
+def cg_headers():
     api_key = os.environ.get("COINGECKO_API_KEY")
-    headers = {"x-cg-demo-api-key": api_key} if api_key else {}
+    return {"x-cg-demo-api-key": api_key} if api_key else {}
+
+
+def get_daily_prices(days=365):
     params = urllib.parse.urlencode({"vs_currency": "usd", "days": days})
-    url = f"{COINGECKO_URL}?{params}"
-    req = urllib.request.Request(url, headers=headers)
+    url = f"{MARKET_CHART_URL}?{params}"
+    req = urllib.request.Request(url, headers=cg_headers())
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read().decode())
     return data["prices"]
+
+
+def get_ath_atl():
+    params = urllib.parse.urlencode({
+        "localization": "false",
+        "tickers": "false",
+        "market_data": "true",
+        "community_data": "false",
+        "developer_data": "false",
+        "sparkline": "false",
+    })
+    url = f"{COIN_DATA_URL}?{params}"
+    req = urllib.request.Request(url, headers=cg_headers())
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.loads(r.read().decode())
+    md = data["market_data"]
+    ath = md["ath"]["usd"]
+    ath_change = md["ath_change_percentage"]["usd"]
+    atl = md["atl"]["usd"]
+    atl_change = md["atl_change_percentage"]["usd"]
+    return ath, ath_change, atl, atl_change
 
 
 def get_fear_greed():
@@ -81,94 +106,3 @@ def compute_rsi(closes, period=14):
 
 
 def compute_rsi_series(closes, period=14):
-    """Devuelve la lista de RSI a lo largo del tiempo (no solo el valor final)."""
-    if len(closes) < period + 2:
-        return []
-
-    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
-    gains = [d if d > 0 else 0 for d in deltas]
-    losses = [-d if d < 0 else 0 for d in deltas]
-
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-
-    def rsi_value(ag, al):
-        if al == 0:
-            return 100.0
-        rs = ag / al
-        return 100 - (100 / (1 + rs))
-
-    rsis = [rsi_value(avg_gain, avg_loss)]
-    for i in range(period, len(deltas)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-        rsis.append(rsi_value(avg_gain, avg_loss))
-
-    return rsis
-
-
-def zone_flag(rsi):
-    if rsi is None:
-        return ""
-    if rsi >= 75:
-        return " ⚠️ sobrecompra"
-    if rsi <= 25:
-        return " ⚠️ sobreventa"
-    return ""
-
-
-def ema_series(closes, period):
-    if len(closes) < period:
-        return []
-    k = 2 / (period + 1)
-    ema = [sum(closes[:period]) / period]
-    for price in closes[period:]:
-        ema.append(price * k + ema[-1] * (1 - k))
-    return ema
-
-
-def compute_macd_histogram(closes):
-    if len(closes) < 35:
-        return []
-
-    ema12_full = ema_series(closes, 12)
-    ema26_full = ema_series(closes, 26)
-
-    offset = len(ema12_full) - len(ema26_full)
-    ema12_aligned = ema12_full[offset:]
-
-    macd_line = [a - b for a, b in zip(ema12_aligned, ema26_full)]
-
-    signal_line = ema_series(macd_line, 9)
-    macd_aligned = macd_line[len(macd_line) - len(signal_line):]
-
-    histogram = [m - s for m, s in zip(macd_aligned, signal_line)]
-    return histogram
-
-
-def describe_macd(histogram):
-    if len(histogram) < 2:
-        return "sin datos suficientes"
-
-    today = histogram[-1]
-    yesterday = histogram[-2]
-
-    color_now = "verde" if today >= 0 else "rojo"
-    color_before = "verde" if yesterday >= 0 else "rojo"
-
-    strengthening = abs(today) > abs(yesterday)
-    shade = "oscuro" if strengthening else "claro"
-    emoji = "🟢" if color_now == "verde" else "🔴"
-    momentum_text = "impulso reforzándose" if strengthening else "impulso agotándose"
-
-    text = f"{emoji} {color_now} {shade} ({momentum_text})"
-
-    if color_now != color_before:
-        cruce = "cruce alcista hoy" if color_now == "verde" else "cruce bajista hoy"
-        text += f" ⚠️ {cruce}"
-
-    return text
-
-
-def find_extrema(values, order, min_distance):
-    """Encuentra picos y valles locales con una
