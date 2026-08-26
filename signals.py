@@ -12,7 +12,7 @@ MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones empezamos a avisar
 # Ranking fijo de importancia (1 = mas importante). Debe coincidir con las
 # claves usadas en strategy.evaluate_strict_signal para COMPRA y VENTA.
 IMPORTANCE_RANK_COMPRA = {
-    "Precio < STH Realized Price": 1,
+    "Precio 10% bajo STH Realized Price": 1,
     "RSI semanal <= 40": 2,
     "MACD linea < 0": 3,
     "F&G <= 46": 4,
@@ -21,7 +21,7 @@ IMPORTANCE_RANK_COMPRA = {
 }
 
 IMPORTANCE_RANK_VENTA = {
-    "Precio > STH Realized Price": 1,
+    "Precio 10% sobre STH Realized Price": 1,
     "RSI semanal >= 60": 2,
     "MACD linea > 0": 3,
     "F&G >= 55": 4,
