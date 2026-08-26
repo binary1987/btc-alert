@@ -80,6 +80,33 @@ def compute_rsi(closes, period=14):
     return 100 - (100 / (1 + rs))
 
 
+def compute_rsi_series(closes, period=14):
+    """Devuelve la lista de RSI a lo largo del tiempo (no solo el valor final)."""
+    if len(closes) < period + 2:
+        return []
+
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [d if d > 0 else 0 for d in deltas]
+    losses = [-d if d < 0 else 0 for d in deltas]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    def rsi_value(ag, al):
+        if al == 0:
+            return 100.0
+        rs = ag / al
+        return 100 - (100 / (1 + rs))
+
+    rsis = [rsi_value(avg_gain, avg_loss)]
+    for i in range(period, len(deltas)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        rsis.append(rsi_value(avg_gain, avg_loss))
+
+    return rsis
+
+
 def zone_flag(rsi):
     if rsi is None:
         return ""
@@ -143,6 +170,67 @@ def describe_macd(histogram):
     return text
 
 
+def find_extrema(values, order, min_distance):
+    """Encuentra picos y valles locales con una separación mínima entre ellos."""
+    peaks = []
+    troughs = []
+    n = len(values)
+    i = order
+    while i < n - order:
+        window_before = values[max(0, i - order):i]
+        window_after = values[i + 1:i + 1 + order]
+
+        if window_before and window_after:
+            is_peak = all(values[i] >= v for v in window_before) and all(values[i] >= v for v in window_after)
+            is_trough = all(values[i] <= v for v in window_before) and all(values[i] <= v for v in window_after)
+
+            if is_peak:
+                peaks.append(i)
+                i += min_distance
+                continue
+            if is_trough:
+                troughs.append(i)
+                i += min_distance
+                continue
+        i += 1
+
+    return peaks, troughs
+
+
+def detect_divergence(closes, order=3, min_distance=5, rsi_period=14):
+    """
+    Compara los dos últimos picos y los dos últimos valles de precio vs RSI.
+    Devuelve un texto describiendo la divergencia encontrada (o su ausencia).
+    """
+    rsi_series = compute_rsi_series(closes, period=rsi_period)
+    if len(rsi_series) < order * 2 + min_distance + 2:
+        return "sin datos suficientes"
+
+    aligned_closes = closes[-len(rsi_series):]
+
+    peaks, troughs = find_extrema(aligned_closes, order, min_distance)
+
+    bearish = False
+    if len(peaks) >= 2:
+        i1, i2 = peaks[-2], peaks[-1]
+        if aligned_closes[i2] > aligned_closes[i1] and rsi_series[i2] < rsi_series[i1]:
+            bearish = True
+
+    bullish = False
+    if len(troughs) >= 2:
+        i1, i2 = troughs[-2], troughs[-1]
+        if aligned_closes[i2] < aligned_closes[i1] and rsi_series[i2] > rsi_series[i1]:
+            bullish = True
+
+    if bearish and bullish:
+        return "⚠️ señales mixtas (revisar gráfico)"
+    if bearish:
+        return "🔻 divergencia bajista (precio sube, RSI pierde fuerza)"
+    if bullish:
+        return "🔺 divergencia alcista (precio baja, RSI gana fuerza)"
+    return "sin divergencia clara"
+
+
 def send_telegram(msg):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -167,6 +255,9 @@ def main():
     macd_daily_hist = compute_macd_histogram(daily_closes)
     macd_weekly_hist = compute_macd_histogram(weekly_closes)
 
+    div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
+    div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
+
     fng_value, fng_text = get_fear_greed()
     fng_emoji = FNG_EMOJIS.get(fng_text, "")
 
@@ -179,7 +270,10 @@ def main():
         f"RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}\n"
         "----------------------------------\n"
         f"MACD diario: {describe_macd(macd_daily_hist)}\n"
-        f"MACD semanal: {describe_macd(macd_weekly_hist)}"
+        f"MACD semanal: {describe_macd(macd_weekly_hist)}\n"
+        "----------------------------------\n"
+        f"Divergencia diaria: {div_daily}\n"
+        f"Divergencia semanal: {div_weekly}"
     )
 
     print(msg)
