@@ -66,7 +66,7 @@ def get_fear_greed():
     with urllib.request.urlopen(req, timeout=10) as r:
         data = json.loads(r.read().decode())
     entry = data["data"][0]
-    value = entry["value"]
+    value = int(entry["value"])
     classification = entry["value_classification"]
     return value, FNG_TRANSLATIONS.get(classification, classification)
 
