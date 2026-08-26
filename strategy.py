@@ -18,7 +18,7 @@ VENTA (todas las condiciones deben cumplirse):
   - MACD histograma en verde Y perdiendo fuerza (verde claro)
   - Linea MACD por encima de 0
   - Fear & Greed >= 55
-  - Precio 10% por encima del STH Realized Price
+  - Precio 30% por encima del STH Realized Price
   - SMA200 diario >= 60%
   - SMA50 semanal >= 50%
 """
@@ -103,8 +103,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ),
         "MACD linea > 0": bool(len(macd_line) >= 1 and macd_line[-1] > 0),
         "F&G >= 55": fng_value is not None and fng_value >= 55,
-        "Precio 10% por encima de STH Realized Price": (
-            sth_pct_diff is not None and sth_pct_diff >= 10
+        "Precio 30% por encima de STH Realized Price": (
+            sth_pct_diff is not None and sth_pct_diff >= 30
         ),
         "SMA200 diario >= 60%": sma200_pct is not None and sma200_pct >= 60,
         "SMA50 semanal >= 50%": sma50w_pct is not None and sma50w_pct >= 50,
@@ -121,7 +121,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
 
     pct_map = {
         "Precio 10% por debajo de STH Realized Price": sth_pct_diff,
-        "Precio 10% por encima de STH Realized Price": sth_pct_diff,
+        "Precio 30% por encima de STH Realized Price": sth_pct_diff,
         "SMA200 diario <= -20%": sma200_pct,
         "SMA200 diario >= 60%": sma200_pct,
         "SMA50 semanal <= -20%": sma50w_pct,
