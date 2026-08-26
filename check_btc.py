@@ -67,9 +67,9 @@ def main():
 
     if threshold != last:
         if threshold > last:
-            msg = f"BTC subió a {threshold:,} $ (actual: {price:,.0f} $)"
+            msg = f"🟠 BTC subió a {threshold:,} $ (actual: {price:,.0f} $)"
         else:
-            msg = f"BTC bajó de {last:,} $ (actual: {price:,.0f} $)"
+            msg = f"🟠 BTC bajó de {last:,} $ (actual: {price:,.0f} $)"
         print("AVISO:", msg)
         send_telegram(msg)
         send_email(msg)
