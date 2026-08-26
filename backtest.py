@@ -1,82 +1,88 @@
 #!/usr/bin/env python3
 """
-Backtest de la estrategia de señales de compra/venta.
-Recorre el historico dia a dia, usando SOLO los datos disponibles hasta
-cada fecha (sin mirar al futuro), y compara cuantas veces se habria
-disparado una señal con distintos umbrales de indicadores alineados.
+Backtest de la ESTRATEGIA ESTRICTA (5 condiciones fijas de compra/venta).
+Recorre el historico dia a dia usando solo datos disponibles hasta esa
+fecha (sin mirar al futuro). Ejecucion de un solo uso, no se programa.
 
-Esto es un script de UN SOLO USO para validar la estrategia, no se
-programa en el cron. Se ejecuta a mano y se lee el resultado en el log.
+Muestra:
+  - Los dias donde se cumplieron las 5 condiciones (señal completa)
+  - Un resumen de cuantas condiciones (0 a 5) se cumplieron cada dia,
+    para ver que tan cerca ha estado la estrategia de dispararse aunque
+    no llegue a las 5, y decidir si conviene bajar el requisito.
 """
+from collections import Counter
 from datetime import datetime, timezone
 
-from report import get_market_chart, group_last
-from signals import evaluate_signal
+from report import get_market_chart, group_last, get_fear_greed_history
+from strategy import evaluate_strict_signal
 
-THRESHOLDS_TO_TEST = [4, 5]
+REQUIRED = 5
+MIN_HISTORY = 120
 
 
 def main():
     prices, volumes = get_market_chart(days=365)
+    fng_history = get_fear_greed_history(limit=400)
 
     all_daily_closes = [p for _, p in prices]
-    all_daily_volumes = [v for _, v in volumes]
 
-    MIN_HISTORY = 210
-
-    results_by_threshold = {t: [] for t in THRESHOLDS_TO_TEST}
+    compra_counts = Counter()
+    venta_counts = Counter()
+    signals_found = []
+    dias_sin_fng = 0
+    dias_evaluados = 0
 
     for i in range(MIN_HISTORY, len(all_daily_closes)):
-        daily_closes_so_far = all_daily_closes[: i + 1]
-        daily_volumes_so_far = all_daily_volumes[: i + 1]
-        prices_so_far = prices[: i + 1]
+        ts = prices[i][0]
+        date_str = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
+        fng_value = fng_history.get(date_str)
+        if fng_value is None:
+            dias_sin_fng += 1
+            continue
+
+        daily_closes_so_far = all_daily_closes[: i + 1]
+        prices_so_far = prices[: i + 1]
         weekly_closes_so_far = group_last(
             prices_so_far, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1])
         )
 
-        bullish_votes, bearish_votes = evaluate_signal(
-            daily_closes_so_far, daily_volumes_so_far, weekly_closes_so_far
+        signal, cond_compra, cond_venta = evaluate_strict_signal(
+            daily_closes_so_far, weekly_closes_so_far, fng_value, required=REQUIRED
         )
 
-        ts = prices[i][0]
-        date_str = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-        price_then = daily_closes_so_far[-1]
-        price_after_7d = None
-        if i + 7 < len(all_daily_closes):
-            price_after_7d = all_daily_closes[i + 7]
+        dias_evaluados += 1
+        compra_counts[sum(cond_compra.values())] += 1
+        venta_counts[sum(cond_venta.values())] += 1
 
-        for threshold in THRESHOLDS_TO_TEST:
-            signal = None
-            count = 0
-            if len(bullish_votes) >= threshold:
-                signal = "COMPRA"
-                count = len(bullish_votes)
-            elif len(bearish_votes) >= threshold:
-                signal = "VENTA"
-                count = len(bearish_votes)
+        if signal:
+            price_then = daily_closes_so_far[-1]
+            price_after_7d = None
+            if i + 7 < len(all_daily_closes):
+                price_after_7d = all_daily_closes[i + 7]
+            signals_found.append((date_str, signal, price_then, price_after_7d))
 
-            if signal:
-                results_by_threshold[threshold].append(
-                    (date_str, signal, count, price_then, price_after_7d)
-                )
-
-    dias_evaluados = len(all_daily_closes) - MIN_HISTORY
-    print(f"Dias evaluados: {dias_evaluados}")
+    print(f"Dias evaluados: {dias_evaluados} (sin dato F&G: {dias_sin_fng})")
+    print(f"Requisito: {REQUIRED} de 5 condiciones")
     print("=" * 60)
 
-    for threshold in THRESHOLDS_TO_TEST:
-        results = results_by_threshold[threshold]
-        print(f"\nUMBRAL: {threshold} indicadores")
-        print(f"Total de señales disparadas: {len(results)}")
-        print("-" * 60)
+    print(f"\nSEÑALES COMPLETAS DISPARADAS: {len(signals_found)}")
+    print("-" * 60)
+    for date_str, signal, price_then, price_after_7d in signals_found:
+        linea = f"{date_str} | {signal} | precio: {price_then:,.0f} $"
+        if price_after_7d is not None:
+            variacion = ((price_after_7d - price_then) / price_then) * 100
+            linea += f" | 7d despues: {price_after_7d:,.0f} $ ({variacion:+.1f}%)"
+        print(linea)
 
-        for date_str, signal, count, price_then, price_after_7d in results:
-            linea = f"{date_str} | {signal} ({count} indicadores) | precio: {price_then:,.0f} $"
-            if price_after_7d is not None:
-                variacion = ((price_after_7d - price_then) / price_then) * 100
-                linea += f" | 7d despues: {price_after_7d:,.0f} $ ({variacion:+.1f}%)"
-            print(linea)
+    print("\n" + "=" * 60)
+    print("DISTRIBUCION: cuantas condiciones de COMPRA se cumplieron cada dia")
+    for n in range(5, -1, -1):
+        print(f"  {n}/5 condiciones: {compra_counts.get(n, 0)} dias")
+
+    print("\nDISTRIBUCION: cuantas condiciones de VENTA se cumplieron cada dia")
+    for n in range(5, -1, -1):
+        print(f"  {n}/5 condiciones: {venta_counts.get(n, 0)} dias")
 
 
 if __name__ == "__main__":
