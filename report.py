@@ -117,9 +117,9 @@ def main():
         "📊 Informe diario BTC\n"
         "-----------------------------------\n"
         f"Fear & Greed: {fng_emoji} {fng_text} ({fng_value})\n"
-        f"RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}\n"
-        f"RSI semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}\n"
-        f"RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}"
+        f"RSI Diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}\n"
+        f"RSI Semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}\n"
+        f"RSI Mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}"
     )
 
     print(msg)
