@@ -551,9 +551,30 @@ def main():
 
     ath, ath_change = get_ath()
 
+    try:
+        sth_realized_price = get_sth_realized_price()
+    except Exception as e:
+        print(f"Aviso: no se pudo obtener STH Realized Price ({e})")
+        sth_realized_price = None
+
     current_price = daily_closes[-1]
     atl_12m = min(daily_closes)
     atl_12m_change = ((current_price - atl_12m) / atl_12m) * 100
+
+    sma_200_daily = compute_sma(daily_closes, 200)
+    sma_50_weekly = compute_sma(weekly_closes, 50)
+
+    sth_pct = None
+    if sth_realized_price:
+        sth_pct = ((current_price - sth_realized_price) / sth_realized_price) * 100
+
+    sma200_pct = None
+    if sma_200_daily:
+        sma200_pct = ((current_price - sma_200_daily) / sma_200_daily) * 100
+
+    sma50w_pct = None
+    if sma_50_weekly:
+        sma50w_pct = ((current_price - sma_50_weekly) / sma_50_weekly) * 100
 
     alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_daily_signal)
 
@@ -583,6 +604,17 @@ def main():
         "----------------------------------",
         f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
         f"ATL: {atl_12m:,.0f} $ ({atl_12m_change:+.1f}%) (mínimo últimos 12 meses)",
+        "----------------------------------",
+    ]
+
+    if sth_pct is not None:
+        lines.append(f"Distancia a STH Realized Price: {sth_pct:+.1f}%")
+    if sma200_pct is not None:
+        lines.append(f"Distancia a SMA200 diario: {sma200_pct:+.1f}%")
+    if sma50w_pct is not None:
+        lines.append(f"Distancia a SMA50 semanal: {sma50w_pct:+.1f}%")
+
+    lines += [
         "----------------------------------",
         f"Tendencia corto plazo: {corto}",
         f"Tendencia medio plazo: {medio}",
