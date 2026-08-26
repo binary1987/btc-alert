@@ -23,7 +23,7 @@ IMPORTANCE_RANK_COMPRA = {
 }
 
 IMPORTANCE_RANK_VENTA = {
-    "Precio 10% por encima de STH Realized Price": 1,
+    "Precio 30% por encima de STH Realized Price": 1,
     "RSI semanal >= 60": 2,
     "MACD linea > 0": 3,
     "F&G >= 55": 4,
