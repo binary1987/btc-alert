@@ -1,26 +1,19 @@
 #!/usr/bin/env python3
 """
-Estrategia estricta de compra/venta definida por el usuario.
+Estrategia estricta de compra/venta.
 
-COMPRA (todas las condiciones deben cumplirse):
-  - RSI diario (14) <= 25
-  - RSI semanal (14) <= 40
-  - MACD histograma en rojo Y perdiendo fuerza (rojo claro)
-  - Linea MACD por debajo de 0
-  - Fear & Greed <= 46
-  - Precio 10% por debajo del STH Realized Price
-  - SMA200 diario <= -20%
-  - SMA50 semanal <= -20%
+Orden fijo de importancia (de mas a menos determinante):
+  1. Distancia al STH Realized Price
+  2. SMA200 diario
+  3. RSI semanal
+  4. MACD linea vs cero
+  5. Fear & Greed
+  6. SMA50 semanal
+  7. RSI diario
+  8. MACD histograma perdiendo fuerza
 
-VENTA (todas las condiciones deben cumplirse):
-  - RSI diario (14) >= 75
-  - RSI semanal (14) >= 60
-  - MACD histograma en verde Y perdiendo fuerza (verde claro)
-  - Linea MACD por encima de 0
-  - Fear & Greed >= 55
-  - Precio 30% por encima del STH Realized Price
-  - SMA200 diario >= 60%
-  - SMA50 semanal >= 50%
+COMPRA: todas las condiciones se evaluan con umbrales de sobreventa/capitulacion.
+VENTA: todas las condiciones se evaluan con umbrales de sobrecompra/euforia.
 """
 from report import compute_rsi, compute_macd_histogram, ema_series, compute_sma
 
@@ -53,11 +46,13 @@ def macd_weakening(histogram):
 
 def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_price=None, required=5):
     """
-    Evalua las condiciones de COMPRA y de VENTA.
-    Devuelve (señal_o_None, condiciones_compra, condiciones_venta, pct_map)
-    condiciones_* son diccionarios {texto: True/False}
-    pct_map es un diccionario {texto_condicion: valor_%} para las condiciones
-    basadas en distancia porcentual, util para mostrar el dato real en el mensaje.
+    Evalua las condiciones de COMPRA y de VENTA, en el orden fijo acordado.
+
+    Devuelve (señal_o_None, compra_items, venta_items)
+    donde cada *_items es una lista ordenada de tuplas:
+        (texto_condicion, se_cumple_bool, valor_o_None, unidad_o_None)
+    unidad es "%" para porcentajes, "" para numeros sin unidad (RSI, F&G),
+    o None cuando esa condicion no muestra ningun valor (MACD).
     """
     rsi_daily = compute_rsi(daily_closes)
     rsi_weekly = compute_rsi(weekly_closes)
@@ -80,38 +75,94 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     if sma50_weekly:
         sma50w_pct = ((current_price - sma50_weekly) / sma50_weekly) * 100
 
-    conditions_compra = {
-        "RSI diario <= 25": rsi_daily is not None and rsi_daily <= 25,
-        "RSI semanal <= 40": rsi_weekly is not None and rsi_weekly <= 40,
-        "MACD rojo claro perdiendo fuerza": bool(
-            len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak
+    compra_items = [
+        (
+            "Distancia a STH Realized Price menor o igual a -10%",
+            sth_pct_diff is not None and sth_pct_diff <= -10,
+            sth_pct_diff, "%",
         ),
-        "MACD linea < 0": bool(len(macd_line) >= 1 and macd_line[-1] < 0),
-        "F&G <= 46": fng_value is not None and fng_value <= 46,
-        "Precio 10% por debajo de STH Realized Price": (
-            sth_pct_diff is not None and sth_pct_diff <= -10
+        (
+            "SMA200 diario menor o igual a -20%",
+            sma200_pct is not None and sma200_pct <= -20,
+            sma200_pct, "%",
         ),
-        "SMA200 diario <= -20%": sma200_pct is not None and sma200_pct <= -20,
-        "SMA50 semanal <= -20%": sma50w_pct is not None and sma50w_pct <= -20,
-    }
+        (
+            "RSI semanal menor o igual a 40",
+            rsi_weekly is not None and rsi_weekly <= 40,
+            rsi_weekly, "",
+        ),
+        (
+            "MACD linea menor que 0",
+            bool(len(macd_line) >= 1 and macd_line[-1] < 0),
+            None, None,
+        ),
+        (
+            "F&G menor o igual a 46",
+            fng_value is not None and fng_value <= 46,
+            fng_value, "",
+        ),
+        (
+            "SMA50 semanal menor o igual a -20%",
+            sma50w_pct is not None and sma50w_pct <= -20,
+            sma50w_pct, "%",
+        ),
+        (
+            "RSI diario menor o igual a 25",
+            rsi_daily is not None and rsi_daily <= 25,
+            rsi_daily, "",
+        ),
+        (
+            "MACD rojo claro perdiendo fuerza",
+            bool(len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak),
+            None, None,
+        ),
+    ]
 
-    conditions_venta = {
-        "RSI diario >= 75": rsi_daily is not None and rsi_daily >= 75,
-        "RSI semanal >= 60": rsi_weekly is not None and rsi_weekly >= 60,
-        "MACD verde claro perdiendo fuerza": bool(
-            len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak
+    venta_items = [
+        (
+            "Distancia a STH Realized Price mayor o igual a +30%",
+            sth_pct_diff is not None and sth_pct_diff >= 30,
+            sth_pct_diff, "%",
         ),
-        "MACD linea > 0": bool(len(macd_line) >= 1 and macd_line[-1] > 0),
-        "F&G >= 55": fng_value is not None and fng_value >= 55,
-        "Precio 30% por encima de STH Realized Price": (
-            sth_pct_diff is not None and sth_pct_diff >= 30
+        (
+            "SMA200 diario mayor o igual a 60%",
+            sma200_pct is not None and sma200_pct >= 60,
+            sma200_pct, "%",
         ),
-        "SMA200 diario >= 60%": sma200_pct is not None and sma200_pct >= 60,
-        "SMA50 semanal >= 50%": sma50w_pct is not None and sma50w_pct >= 50,
-    }
+        (
+            "RSI semanal mayor o igual a 60",
+            rsi_weekly is not None and rsi_weekly >= 60,
+            rsi_weekly, "",
+        ),
+        (
+            "MACD linea mayor que 0",
+            bool(len(macd_line) >= 1 and macd_line[-1] > 0),
+            None, None,
+        ),
+        (
+            "F&G mayor o igual a 55",
+            fng_value is not None and fng_value >= 55,
+            fng_value, "",
+        ),
+        (
+            "SMA50 semanal mayor o igual a 50%",
+            sma50w_pct is not None and sma50w_pct >= 50,
+            sma50w_pct, "%",
+        ),
+        (
+            "RSI diario mayor o igual a 75",
+            rsi_daily is not None and rsi_daily >= 75,
+            rsi_daily, "",
+        ),
+        (
+            "MACD verde claro perdiendo fuerza",
+            bool(len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak),
+            None, None,
+        ),
+    ]
 
-    compra_count = sum(conditions_compra.values())
-    venta_count = sum(conditions_venta.values())
+    compra_count = sum(1 for _, met, _, _ in compra_items if met)
+    venta_count = sum(1 for _, met, _, _ in venta_items if met)
 
     signal = None
     if compra_count >= required:
@@ -119,13 +170,4 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     elif venta_count >= required:
         signal = "VENTA"
 
-    pct_map = {
-        "Precio 10% por debajo de STH Realized Price": sth_pct_diff,
-        "Precio 30% por encima de STH Realized Price": sth_pct_diff,
-        "SMA200 diario <= -20%": sma200_pct,
-        "SMA200 diario >= 60%": sma200_pct,
-        "SMA50 semanal <= -20%": sma50w_pct,
-        "SMA50 semanal >= 50%": sma50w_pct,
-    }
-
-    return signal, conditions_compra, conditions_venta, pct_map
+    return signal, compra_items, venta_items
