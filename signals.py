@@ -3,7 +3,10 @@ import os
 import urllib.request
 import urllib.parse
 
-from report import get_market_chart, group_last, get_fear_greed, get_sth_realized_price
+from report import (
+    get_market_chart, group_last, get_fear_greed, get_sth_realized_price,
+    append_sth_history, detect_sth_divergence,
+)
 from strategy import evaluate_strict_signal
 
 STATE_FILE = "last_tier.txt"
@@ -40,7 +43,7 @@ def send_telegram(msg):
 
 
 def build_message(direction, items):
-    conditions_met = sum(1 for _, pts, _, _, _ in items if pts >= 1)
+    conditions_met = sum(1 for _, pts, _, _ in items if pts >= 1)
     total_conditions = len(items)
 
     emoji = "🟢" if direction == "COMPRA" else "🔴"
@@ -53,7 +56,7 @@ def build_message(direction, items):
         "",
     ]
 
-    for text, pts, value, unit, is_strong in items:
+    for text, pts, value, unit in items:
         check = "✅" if pts >= 1 else "❌"
         line = f"{check} {text}"
         if value is not None:
@@ -61,8 +64,6 @@ def build_message(direction, items):
                 line += f": {value:+.0f}%"
             else:
                 line += f": {value:.0f}"
-        if is_strong:
-            line += " 🔥 (fuerte)"
         lines.append(line)
 
     return "\n".join(lines)
@@ -81,12 +82,23 @@ def main():
         print(f"Aviso: no se pudo obtener STH Realized Price ({e}), se ignora esa condicion")
         sth_realized_price = None
 
+    # Guardamos el dato de hoy en nuestro propio historico (si no estaba ya)
+    if sth_realized_price is not None:
+        saved = append_sth_history(daily_closes[-1], sth_realized_price)
+        print(f"Historico STH actualizado hoy: {saved}")
+
+    sth_divergence = detect_sth_divergence()
+    print(f"Divergencia STH: {sth_divergence}")
+
     _, compra_items, venta_items = evaluate_strict_signal(
-        daily_closes, weekly_closes, fng_value, sth_realized_price=sth_realized_price, required=8
+        daily_closes, weekly_closes, fng_value,
+        sth_realized_price=sth_realized_price,
+        sth_divergence=sth_divergence,
+        required=8,
     )
 
-    tier_compra_now = sum(1 for _, pts, _, _, _ in compra_items if pts >= 1)
-    tier_venta_now = sum(1 for _, pts, _, _, _ in venta_items if pts >= 1)
+    tier_compra_now = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
+    tier_venta_now = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
 
     last_compra, last_venta = read_last_tiers()
 
