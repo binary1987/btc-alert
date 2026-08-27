@@ -98,6 +98,77 @@ def get_sth_realized_price():
     return float(parts[2])
 
 
+def read_sth_history(path="sth_history.txt"):
+    """Devuelve una lista de (fecha, precio, sth_value, pct) en orden cronologico."""
+    if not os.path.exists(path):
+        return []
+    history = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            date_str, price_str, sth_str, pct_str = line.split(",")
+            history.append((date_str, float(price_str), float(sth_str), float(pct_str)))
+    return history
+
+
+def append_sth_history(price, sth_value, path="sth_history.txt"):
+    """
+    Guarda el dato de hoy (precio, STH, distancia %) si no se habia guardado ya.
+    Construye poco a poco nuestro propio historico, ya que la fuente gratuita
+    solo da el valor de hoy, no un historico completo.
+    """
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    history = read_sth_history(path)
+    existing_dates = {h[0] for h in history}
+    if today_str in existing_dates:
+        return False
+
+    pct = None
+    if sth_value:
+        pct = ((price - sth_value) / sth_value) * 100
+
+    with open(path, "a") as f:
+        f.write(f"{today_str},{price},{sth_value},{pct}\n")
+    return True
+
+
+def detect_sth_divergence(path="sth_history.txt", order=2, min_distance=3):
+    """
+    Divergencia STH Realized Price, calculada sobre el historico propio que
+    vamos construyendo dia a dia (no viene de una fuente externa).
+    """
+    history = read_sth_history(path)
+    if len(history) < order * 2 + min_distance + 2:
+        return "sin datos suficientes"
+
+    prices = [h[1] for h in history]
+    pcts = [h[3] for h in history]
+
+    peaks, troughs = find_extrema(prices, order, min_distance)
+
+    bearish = False
+    if len(peaks) >= 2:
+        i1, i2 = peaks[-2], peaks[-1]
+        if prices[i2] > prices[i1] and pcts[i2] < pcts[i1]:
+            bearish = True
+
+    bullish = False
+    if len(troughs) >= 2:
+        i1, i2 = troughs[-2], troughs[-1]
+        if prices[i2] < prices[i1] and pcts[i2] > pcts[i1]:
+            bullish = True
+
+    if bearish and bullish:
+        return "⚠️ señales mixtas (revisar gráfico)"
+    if bearish:
+        return "🔻 divergencia bajista"
+    if bullish:
+        return "🔺 divergencia alcista"
+    return "sin divergencia clara"
+
+
 def group_last(prices, keyfunc):
     groups = {}
     order = []
@@ -615,6 +686,7 @@ def main():
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
     div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
     div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
+    div_sth = detect_sth_divergence()
 
     boll_daily = compute_bollinger(daily_closes)
     boll_weekly = compute_bollinger(weekly_closes)
@@ -674,6 +746,7 @@ def main():
         f"Divergencia semanal: {div_weekly}",
         f"Divergencia SMA200 diario: {div_sma200}",
         f"Divergencia SMA50 semanal: {div_sma50w}",
+        f"Divergencia STH Realized Price: {div_sth}",
         "----------------------------------",
         f"Bollinger diario: {describe_bollinger(boll_daily)}",
         f"Bollinger semanal: {describe_bollinger(boll_weekly)}",
@@ -684,13 +757,13 @@ def main():
     ]
 
     if sth_pct is not None:
-        flag = historical_zone_flag(sth_pct, buy_threshold=-10, sell_threshold=30, buy_strong=-20, sell_strong=50)
+        flag = historical_zone_flag(sth_pct, buy_threshold=-10, sell_threshold=30)
         lines.append(f"Distancia a STH Realized Price: {sth_pct:+.1f}%{flag}")
     if sma200_pct is not None:
-        flag = historical_zone_flag(sma200_pct, buy_threshold=-20, sell_threshold=40, buy_strong=-30, sell_strong=80)
+        flag = historical_zone_flag(sma200_pct, buy_threshold=-25, sell_threshold=45)
         lines.append(f"Distancia a SMA200 diario: {sma200_pct:+.1f}%{flag}")
     if sma50w_pct is not None:
-        flag = historical_zone_flag(sma50w_pct, buy_threshold=-20, sell_threshold=50, buy_strong=-30, sell_strong=80)
+        flag = historical_zone_flag(sma50w_pct, buy_threshold=-20, sell_threshold=60)
         lines.append(f"Distancia a SMA50 semanal: {sma50w_pct:+.1f}%{flag}")
 
     lines += [
