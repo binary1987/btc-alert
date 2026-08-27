@@ -434,9 +434,9 @@ def describe_bollinger(bollinger_data):
     price, sma, upper, lower = bollinger_data
 
     if price >= upper:
-        return "🔺 tocando banda superior ⚠️ posible sobrecompra"
+        return "🔺 tocando banda superior ⚠️ sobrecompra"
     if price <= lower:
-        return "🔻 tocando banda inferior ⚠️ posible sobreventa"
+        return "🔻 tocando banda inferior ⚠️ sobreventa"
     return "dentro de las bandas (normal)"
 
 
