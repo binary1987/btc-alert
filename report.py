@@ -668,6 +668,8 @@ def send_telegram(msg):
 
 
 def main():
+    from strategy import evaluate_strict_signal
+
     prices, volumes = get_market_chart(days=365)
 
     daily_closes = [p for _, p in prices]
@@ -724,6 +726,25 @@ def main():
 
     alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_daily_signal)
 
+    _, compra_items, venta_items = evaluate_strict_signal(
+        daily_closes, weekly_closes, fng_value,
+        sth_realized_price=sth_realized_price, sth_divergence=div_sth, required=8
+    )
+    compra_count = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
+    venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
+    total_conditions = len(compra_items)
+
+    MIN_ZONE_TIER = 3
+    if compra_count >= MIN_ZONE_TIER or venta_count >= MIN_ZONE_TIER:
+        if compra_count > venta_count:
+            zone_text = f"🟢 Zona de compra ({compra_count}/{total_conditions})"
+        elif venta_count > compra_count:
+            zone_text = f"🔴 Zona de venta ({venta_count}/{total_conditions})"
+        else:
+            zone_text = f"⚠️ Zona mixta (compra {compra_count}/{total_conditions}, venta {venta_count}/{total_conditions})"
+    else:
+        zone_text = "➖ Zona neutral"
+
     corto, medio, largo = compute_trend_summary(
         rsi_daily, rsi_weekly, rsi_monthly,
         macd_daily_hist, macd_weekly_hist,
@@ -733,6 +754,8 @@ def main():
 
     lines = [
         "📊 Informe diario BTC",
+        "----------------------------------",
+        f"Zona: {zone_text}",
         "----------------------------------",
         f"Fear & Greed: {fng_emoji} {fng_text} ({fng_value})",
         f"RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}",
