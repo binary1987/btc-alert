@@ -3,6 +3,12 @@
 Alerta de movimiento de precio (% diario y % semanal), con dos niveles:
 normal y fuerte. Avisa una sola vez por dia (diario) o por semana (semanal),
 reseteando el aviso al empezar el periodo siguiente.
+
+IMPORTANTE: no llama a la API de CoinGecko. Lee el historico de precios
+que ya guarda check_btc.py en shared_price_history.json, para poder correr
+con la misma frecuencia (cada 10 min) sin coste extra de API. Por eso el
+cronjob de este script debe programarse unos minutos DESPUES del de
+check_btc.py, para asegurarse de que el archivo compartido esta actualizado.
 """
 import os
 import json
@@ -10,14 +16,23 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
 
-from report import get_market_chart, compute_roc
+from report import compute_roc
 
 STATE_FILE = "last_price_move.txt"
+SHARED_PRICE_FILE = "shared_price_history.json"
 
 DAILY_NORMAL = 5
 DAILY_STRONG = 10
 WEEKLY_NORMAL = 12
 WEEKLY_STRONG = 24
+
+
+def read_shared_price_history():
+    """Devuelve la lista de precios guardada por check_btc.py, o None si no existe todavia."""
+    if not os.path.exists(SHARED_PRICE_FILE):
+        return None
+    with open(SHARED_PRICE_FILE) as f:
+        return json.load(f)
 
 
 def read_state():
@@ -64,8 +79,12 @@ def build_message(period_label, pct, is_strong, current_price, past_price, past_
 
 
 def main():
-    prices, _ = get_market_chart(days=365)
-    daily_closes = [p for _, p in prices]
+    daily_closes = read_shared_price_history()
+
+    if not daily_closes or len(daily_closes) < 8:
+        print("Aviso: historico compartido todavia insuficiente (necesita al menos 8 dias). Se sale sin comprobar.")
+        return
+
     current_price = daily_closes[-1]
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -94,7 +113,6 @@ def main():
         send_telegram(msg)
         new_day_state = today_str
     elif state["day"] != today_str:
-        # dia nuevo pero sin movimiento relevante: reseteamos igualmente el marcador de dia
         new_day_state = None
 
     # --- Movimiento semanal ---
