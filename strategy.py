@@ -11,11 +11,13 @@ Orden fijo de importancia (de mas a menos determinante):
   6. SMA50 semanal
   7. RSI diario
   8. MACD histograma perdiendo fuerza
-  9. Divergencia RSI diario
-  10. Divergencia RSI semanal
+  9. Divergencia diaria (RSI)
+  10. Divergencia semanal (RSI)
   11. Divergencia SMA200 diario
   12. Divergencia SMA50 semanal
   13. Divergencia STH Realized Price
+  14. Bollinger diario (tocando banda superior/inferior)
+  15. Bollinger semanal (tocando banda superior/inferior)
 
 Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
 La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
@@ -24,11 +26,12 @@ correspondiente, que es independiente del umbral de %. Esto evita el problema
 de que los picos tardios de un ciclo tengan % menores aunque el precio sea
 mas extremo (rendimientos decrecientes).
 
-Puntuacion maxima total: 13 puntos.
+Puntuacion maxima total: 15 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
     detect_divergence, detect_sma_divergence,
+    compute_bollinger, bollinger_signal,
 )
 
 
@@ -138,6 +141,16 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     div_sth_compra = 1 if "alcista" in sth_divergence else 0
     div_sth_venta = 1 if "bajista" in sth_divergence else 0
 
+    boll_daily = compute_bollinger(daily_closes)
+    boll_sig = bollinger_signal(boll_daily)
+    boll_compra = 1 if boll_sig == "sobreventa" else 0
+    boll_venta = 1 if boll_sig == "sobrecompra" else 0
+
+    boll_weekly = compute_bollinger(weekly_closes)
+    boll_weekly_sig = bollinger_signal(boll_weekly)
+    boll_weekly_compra = 1 if boll_weekly_sig == "sobreventa" else 0
+    boll_weekly_venta = 1 if boll_weekly_sig == "sobrecompra" else 0
+
     compra_items = [
         ("Distancia a STH Realized Price menor o igual a -10%", sth_compra, sth_pct_diff, "%"),
         ("SMA200 diario menor o igual a -25%", sma200_compra, sma200_pct, "%"),
@@ -152,6 +165,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None),
         ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None),
         ("Divergencia STH Realized Price alcista", div_sth_compra, None, None),
+        ("Bollinger diario tocando banda inferior", boll_compra, None, None),
+        ("Bollinger semanal tocando banda inferior", boll_weekly_compra, None, None),
     ]
 
     venta_items = [
@@ -168,6 +183,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None),
         ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None),
         ("Divergencia STH Realized Price bajista", div_sth_venta, None, None),
+        ("Bollinger diario tocando banda superior", boll_venta, None, None),
+        ("Bollinger semanal tocando banda superior", boll_weekly_venta, None, None),
     ]
 
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
