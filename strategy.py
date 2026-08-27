@@ -14,6 +14,7 @@ Orden fijo de importancia (de mas a menos determinante):
   9. Divergencia diaria (RSI)
   10. Divergencia semanal (RSI)
   11. Divergencia SMA200 diario
+  12. Divergencia SMA50 semanal
 
 Las 3 condiciones de distancia (STH, SMA200, SMA50) puntuan 0, 1 o 2:
   0 = no cumple ni el umbral normal
@@ -21,11 +22,11 @@ Las 3 condiciones de distancia (STH, SMA200, SMA50) puntuan 0, 1 o 2:
   2 = cumple el umbral "fuerte" (zona historica mas extrema)
 
 El resto de condiciones puntuan 0 o 1 (cumple / no cumple).
-Puntuacion maxima total: 8*1 + 3*2 = 14 puntos.
+Puntuacion maxima total: 9*1 + 3*2 = 15 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
-    detect_divergence, detect_sma200_divergence,
+    detect_divergence, detect_sma_divergence,
 )
 
 
@@ -136,7 +137,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
 
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
-    div_sma200 = detect_sma200_divergence(daily_closes, order=3, min_distance=5)
+    div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
+    div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
 
     div_daily_compra = 1 if "alcista" in div_daily else 0
     div_daily_venta = 1 if "bajista" in div_daily else 0
@@ -146,6 +148,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
 
     div_sma200_compra = 1 if "alcista" in div_sma200 else 0
     div_sma200_venta = 1 if "bajista" in div_sma200 else 0
+
+    div_sma50w_compra = 1 if "alcista" in div_sma50w else 0
+    div_sma50w_venta = 1 if "bajista" in div_sma50w else 0
 
     compra_items = [
         ("Distancia a STH Realized Price menor o igual a -10%", sth_compra_pts, sth_pct_diff, "%", sth_compra_strong),
@@ -159,6 +164,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ("Divergencia diaria (RSI) alcista", div_daily_compra, None, None, False),
         ("Divergencia semanal (RSI) alcista", div_weekly_compra, None, None, False),
         ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None, False),
+        ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None, False),
     ]
 
     venta_items = [
@@ -173,9 +179,10 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
         ("Divergencia diaria (RSI) bajista", div_daily_venta, None, None, False),
         ("Divergencia semanal (RSI) bajista", div_weekly_venta, None, None, False),
         ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None, False),
+        ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None, False),
     ]
 
-    # Conteo de "condiciones activas" (>=1 punto), igual que el sistema anterior de X/8
+    # Conteo de "condiciones activas" (>=1 punto)
     compra_conditions_met = sum(1 for _, pts, _, _, _ in compra_items if pts >= 1)
     venta_conditions_met = sum(1 for _, pts, _, _, _ in venta_items if pts >= 1)
 
