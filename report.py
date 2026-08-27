@@ -285,6 +285,59 @@ def detect_divergence(closes, order=3, min_distance=5, rsi_period=14):
     return "sin divergencia clara"
 
 
+def compute_sma_distance_series(closes, period=200):
+    """
+    Devuelve la serie de distancia % del precio respecto a su SMA(period),
+    calculada en cada punto donde ya hay suficiente historial (rolling).
+    """
+    if len(closes) < period + 1:
+        return []
+
+    distances = []
+    for i in range(period, len(closes)):
+        window = closes[i - period:i]
+        sma = sum(window) / period
+        if sma == 0:
+            distances.append(0.0)
+        else:
+            distances.append(((closes[i] - sma) / sma) * 100)
+    return distances
+
+
+def detect_sma200_divergence(closes, period=200, order=3, min_distance=5):
+    """
+    Version reducida (solo compara los 2 ultimos picos/valles, no un ciclo
+    completo) de la misma logica que detect_divergence, pero usando la
+    distancia % a la SMA200 en vez del RSI.
+    """
+    distances = compute_sma_distance_series(closes, period)
+    if len(distances) < order * 2 + min_distance + 2:
+        return "sin datos suficientes"
+
+    aligned_closes = closes[-len(distances):]
+    peaks, troughs = find_extrema(aligned_closes, order, min_distance)
+
+    bearish = False
+    if len(peaks) >= 2:
+        i1, i2 = peaks[-2], peaks[-1]
+        if aligned_closes[i2] > aligned_closes[i1] and distances[i2] < distances[i1]:
+            bearish = True
+
+    bullish = False
+    if len(troughs) >= 2:
+        i1, i2 = troughs[-2], troughs[-1]
+        if aligned_closes[i2] < aligned_closes[i1] and distances[i2] > distances[i1]:
+            bullish = True
+
+    if bearish and bullish:
+        return "⚠️ señales mixtas (revisar gráfico)"
+    if bearish:
+        return "🔻 divergencia bajista"
+    if bullish:
+        return "🔺 divergencia alcista"
+    return "sin divergencia clara"
+
+
 def compute_bollinger(closes, period=20, num_std=2):
     """Devuelve (precio_actual, sma, banda_superior, banda_inferior) o None."""
     if len(closes) < period:
@@ -559,6 +612,7 @@ def main():
 
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
+    div_sma200 = detect_sma200_divergence(daily_closes, order=3, min_distance=5)
 
     boll_daily = compute_bollinger(daily_closes)
     boll_weekly = compute_bollinger(weekly_closes)
@@ -616,6 +670,7 @@ def main():
         "----------------------------------",
         f"Divergencia diaria: {div_daily}",
         f"Divergencia semanal: {div_weekly}",
+        f"Divergencia SMA200 diario: {div_sma200}",
         "----------------------------------",
         f"Bollinger diario: {describe_bollinger(boll_daily)}",
         f"Bollinger semanal: {describe_bollinger(boll_weekly)}",
