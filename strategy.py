@@ -108,7 +108,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     sth_venta_pts, sth_venta_strong = two_level_score(sth_pct_diff, 30, 50, greater_or_equal=True)
 
     sma200_compra_pts, sma200_compra_strong = two_level_score(sma200_pct, -20, -30, greater_or_equal=False)
-    sma200_venta_pts, sma200_venta_strong = two_level_score(sma200_pct, 60, 100, greater_or_equal=True)
+    sma200_venta_pts, sma200_venta_strong = two_level_score(sma200_pct, 40, 80, greater_or_equal=True)
 
     sma50_compra_pts, sma50_compra_strong = two_level_score(sma50w_pct, -20, -30, greater_or_equal=False)
     sma50_venta_pts, sma50_venta_strong = two_level_score(sma50w_pct, 50, 80, greater_or_equal=True)
@@ -141,7 +141,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
 
     venta_items = [
         ("Distancia a STH Realized Price mayor o igual a +30%", sth_venta_pts, sth_pct_diff, "%", sth_venta_strong),
-        ("SMA200 diario mayor o igual a 60%", sma200_venta_pts, sma200_pct, "%", sma200_venta_strong),
+        ("SMA200 diario mayor o igual a 40%", sma200_venta_pts, sma200_pct, "%", sma200_venta_strong),
         ("RSI semanal mayor o igual a 60", rsi_weekly_venta, rsi_weekly, "", False),
         ("MACD linea mayor que 0", macd_line_venta, None, None, False),
         ("F&G mayor o igual a 55", fng_venta, fng_value, "", False),
