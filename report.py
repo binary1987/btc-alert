@@ -629,7 +629,7 @@ def main():
         flag = historical_zone_flag(sth_pct, buy_threshold=-10, sell_threshold=30, buy_strong=-20, sell_strong=50)
         lines.append(f"Distancia a STH Realized Price: {sth_pct:+.1f}%{flag}")
     if sma200_pct is not None:
-        flag = historical_zone_flag(sma200_pct, buy_threshold=-20, sell_threshold=60, buy_strong=-30, sell_strong=100)
+        flag = historical_zone_flag(sma200_pct, buy_threshold=-20, sell_threshold=40, buy_strong=-30, sell_strong=80)
         lines.append(f"Distancia a SMA200 diario: {sma200_pct:+.1f}%{flag}")
     if sma50w_pct is not None:
         flag = historical_zone_flag(sma50w_pct, buy_threshold=-20, sell_threshold=50, buy_strong=-30, sell_strong=80)
