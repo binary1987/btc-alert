@@ -3,26 +3,28 @@
 Estrategia estricta de compra/venta.
 
 Orden fijo de importancia (de mas a menos determinante):
-  1. Distancia al STH Realized Price (2 niveles: normal/fuerte)
-  2. SMA200 diario (2 niveles: normal/fuerte)
+  1. Distancia al STH Realized Price
+  2. SMA200 diario
   3. RSI semanal
   4. MACD linea vs cero
   5. Fear & Greed
-  6. SMA50 semanal (2 niveles: normal/fuerte)
+  6. SMA50 semanal
   7. RSI diario
   8. MACD histograma perdiendo fuerza
   9. Divergencia diaria (RSI)
   10. Divergencia semanal (RSI)
   11. Divergencia SMA200 diario
   12. Divergencia SMA50 semanal
+  13. Divergencia STH Realized Price
 
-Las 3 condiciones de distancia (STH, SMA200, SMA50) puntuan 0, 1 o 2:
-  0 = no cumple ni el umbral normal
-  1 = cumple el umbral normal
-  2 = cumple el umbral "fuerte" (zona historica mas extrema)
+Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
+La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
+un segundo umbral de porcentaje: se mide con su condicion de divergencia
+correspondiente, que es independiente del umbral de %. Esto evita el problema
+de que los picos tardios de un ciclo tengan % menores aunque el precio sea
+mas extremo (rendimientos decrecientes).
 
-El resto de condiciones puntuan 0 o 1 (cumple / no cumple).
-Puntuacion maxima total: 9*1 + 3*2 = 15 puntos.
+Puntuacion maxima total: 13 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
@@ -56,38 +58,18 @@ def macd_weakening(histogram):
     return abs(histogram[-1]) < abs(histogram[-2])
 
 
-def two_level_score(pct, normal_threshold, strong_threshold, greater_or_equal):
-    """
-    Puntua 0, 1 o 2 segun si pct supera el umbral normal y/o el fuerte.
-    greater_or_equal=True para condiciones de venta (>=), False para compra (<=).
-    Devuelve (puntos, es_fuerte).
-    """
-    if pct is None:
-        return 0, False
-    if greater_or_equal:
-        if pct >= strong_threshold:
-            return 2, True
-        if pct >= normal_threshold:
-            return 1, False
-        return 0, False
-    else:
-        if pct <= strong_threshold:
-            return 2, True
-        if pct <= normal_threshold:
-            return 1, False
-        return 0, False
-
-
-def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_price=None, required=5):
+def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
+                            sth_realized_price=None, sth_divergence="sin datos suficientes",
+                            required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA, en el orden fijo acordado.
 
     Devuelve (señal_o_None, compra_items, venta_items)
     donde cada *_items es una lista ordenada de tuplas:
-        (texto_condicion, puntos, valor_o_None, unidad_o_None, es_fuerte)
-    puntos es 0/1 para condiciones normales, o 0/1/2 para las de 2 niveles.
-    unidad es "%" para porcentajes, "" para numeros sin unidad (RSI, F&G),
-    o None cuando esa condicion no muestra ningun valor (MACD, divergencias).
+        (texto_condicion, puntos, valor_o_None, unidad_o_None)
+    puntos es 0 o 1. unidad es "%" para porcentajes, "" para numeros sin
+    unidad (RSI, F&G), o None cuando esa condicion no muestra valor (MACD,
+    divergencias).
     """
     rsi_daily = compute_rsi(daily_closes)
     rsi_weekly = compute_rsi(weekly_closes)
@@ -110,15 +92,15 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     if sma50_weekly:
         sma50w_pct = ((current_price - sma50_weekly) / sma50_weekly) * 100
 
-    # --- Puntuaciones de 2 niveles ---
-    sth_compra_pts, sth_compra_strong = two_level_score(sth_pct_diff, -10, -20, greater_or_equal=False)
-    sth_venta_pts, sth_venta_strong = two_level_score(sth_pct_diff, 30, 50, greater_or_equal=True)
+    # --- Condiciones de magnitud (umbral unico, sin nivel "fuerte") ---
+    sth_compra = 1 if (sth_pct_diff is not None and sth_pct_diff <= -10) else 0
+    sth_venta = 1 if (sth_pct_diff is not None and sth_pct_diff >= 30) else 0
 
-    sma200_compra_pts, sma200_compra_strong = two_level_score(sma200_pct, -20, -30, greater_or_equal=False)
-    sma200_venta_pts, sma200_venta_strong = two_level_score(sma200_pct, 40, 80, greater_or_equal=True)
+    sma200_compra = 1 if (sma200_pct is not None and sma200_pct <= -25) else 0
+    sma200_venta = 1 if (sma200_pct is not None and sma200_pct >= 45) else 0
 
-    sma50_compra_pts, sma50_compra_strong = two_level_score(sma50w_pct, -20, -30, greater_or_equal=False)
-    sma50_venta_pts, sma50_venta_strong = two_level_score(sma50w_pct, 50, 80, greater_or_equal=True)
+    sma50_compra = 1 if (sma50w_pct is not None and sma50w_pct <= -20) else 0
+    sma50_venta = 1 if (sma50w_pct is not None and sma50w_pct >= 60) else 0
 
     rsi_weekly_compra = 1 if (rsi_weekly is not None and rsi_weekly <= 40) else 0
     rsi_weekly_venta = 1 if (rsi_weekly is not None and rsi_weekly >= 60) else 0
@@ -135,6 +117,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     macd_hist_compra = 1 if (len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak) else 0
     macd_hist_venta = 1 if (len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak) else 0
 
+    # --- Condiciones de divergencia (independientes del umbral de %) ---
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
     div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
@@ -152,39 +135,43 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value, sth_realized_
     div_sma50w_compra = 1 if "alcista" in div_sma50w else 0
     div_sma50w_venta = 1 if "bajista" in div_sma50w else 0
 
+    div_sth_compra = 1 if "alcista" in sth_divergence else 0
+    div_sth_venta = 1 if "bajista" in sth_divergence else 0
+
     compra_items = [
-        ("Distancia a STH Realized Price menor o igual a -10%", sth_compra_pts, sth_pct_diff, "%", sth_compra_strong),
-        ("SMA200 diario menor o igual a -20%", sma200_compra_pts, sma200_pct, "%", sma200_compra_strong),
-        ("RSI semanal menor o igual a 40", rsi_weekly_compra, rsi_weekly, "", False),
-        ("MACD linea menor que 0", macd_line_compra, None, None, False),
-        ("F&G menor o igual a 46", fng_compra, fng_value, "", False),
-        ("SMA50 semanal menor o igual a -20%", sma50_compra_pts, sma50w_pct, "%", sma50_compra_strong),
-        ("RSI diario menor o igual a 25", rsi_daily_compra, rsi_daily, "", False),
-        ("MACD rojo claro perdiendo fuerza", macd_hist_compra, None, None, False),
-        ("Divergencia diaria (RSI) alcista", div_daily_compra, None, None, False),
-        ("Divergencia semanal (RSI) alcista", div_weekly_compra, None, None, False),
-        ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None, False),
-        ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None, False),
+        ("Distancia a STH Realized Price menor o igual a -10%", sth_compra, sth_pct_diff, "%"),
+        ("SMA200 diario menor o igual a -25%", sma200_compra, sma200_pct, "%"),
+        ("RSI semanal menor o igual a 40", rsi_weekly_compra, rsi_weekly, ""),
+        ("MACD linea menor que 0", macd_line_compra, None, None),
+        ("F&G menor o igual a 46", fng_compra, fng_value, ""),
+        ("SMA50 semanal menor o igual a -20%", sma50_compra, sma50w_pct, "%"),
+        ("RSI diario menor o igual a 25", rsi_daily_compra, rsi_daily, ""),
+        ("MACD rojo claro perdiendo fuerza", macd_hist_compra, None, None),
+        ("Divergencia diaria (RSI) alcista", div_daily_compra, None, None),
+        ("Divergencia semanal (RSI) alcista", div_weekly_compra, None, None),
+        ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None),
+        ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None),
+        ("Divergencia STH Realized Price alcista", div_sth_compra, None, None),
     ]
 
     venta_items = [
-        ("Distancia a STH Realized Price mayor o igual a +30%", sth_venta_pts, sth_pct_diff, "%", sth_venta_strong),
-        ("SMA200 diario mayor o igual a 40%", sma200_venta_pts, sma200_pct, "%", sma200_venta_strong),
-        ("RSI semanal mayor o igual a 60", rsi_weekly_venta, rsi_weekly, "", False),
-        ("MACD linea mayor que 0", macd_line_venta, None, None, False),
-        ("F&G mayor o igual a 55", fng_venta, fng_value, "", False),
-        ("SMA50 semanal mayor o igual a 50%", sma50_venta_pts, sma50w_pct, "%", sma50_venta_strong),
-        ("RSI diario mayor o igual a 75", rsi_daily_venta, rsi_daily, "", False),
-        ("MACD verde claro perdiendo fuerza", macd_hist_venta, None, None, False),
-        ("Divergencia diaria (RSI) bajista", div_daily_venta, None, None, False),
-        ("Divergencia semanal (RSI) bajista", div_weekly_venta, None, None, False),
-        ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None, False),
-        ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None, False),
+        ("Distancia a STH Realized Price mayor o igual a +30%", sth_venta, sth_pct_diff, "%"),
+        ("SMA200 diario mayor o igual a 45%", sma200_venta, sma200_pct, "%"),
+        ("RSI semanal mayor o igual a 60", rsi_weekly_venta, rsi_weekly, ""),
+        ("MACD linea mayor que 0", macd_line_venta, None, None),
+        ("F&G mayor o igual a 55", fng_venta, fng_value, ""),
+        ("SMA50 semanal mayor o igual a 60%", sma50_venta, sma50w_pct, "%"),
+        ("RSI diario mayor o igual a 75", rsi_daily_venta, rsi_daily, ""),
+        ("MACD verde claro perdiendo fuerza", macd_hist_venta, None, None),
+        ("Divergencia diaria (RSI) bajista", div_daily_venta, None, None),
+        ("Divergencia semanal (RSI) bajista", div_weekly_venta, None, None),
+        ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None),
+        ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None),
+        ("Divergencia STH Realized Price bajista", div_sth_venta, None, None),
     ]
 
-    # Conteo de "condiciones activas" (>=1 punto)
-    compra_conditions_met = sum(1 for _, pts, _, _, _ in compra_items if pts >= 1)
-    venta_conditions_met = sum(1 for _, pts, _, _, _ in venta_items if pts >= 1)
+    compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
+    venta_conditions_met = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
 
     signal = None
     if compra_conditions_met >= required:
