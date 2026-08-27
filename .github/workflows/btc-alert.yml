@@ -29,4 +29,5 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           git add last_threshold.txt
           git diff --staged --quiet || git commit -m "update threshold state"
+          git pull --rebase origin main
           git push
