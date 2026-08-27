@@ -11,8 +11,8 @@ Orden fijo de importancia (de mas a menos determinante):
   6. SMA50 semanal
   7. RSI diario
   8. MACD histograma perdiendo fuerza
-  9. Divergencia diaria (RSI)
-  10. Divergencia semanal (RSI)
+  9. Divergencia RSI diario
+  10. Divergencia RSI semanal
   11. Divergencia SMA200 diario
   12. Divergencia SMA50 semanal
   13. Divergencia STH Realized Price
@@ -147,8 +147,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("SMA50 semanal menor o igual a -20%", sma50_compra, sma50w_pct, "%"),
         ("RSI diario menor o igual a 25", rsi_daily_compra, rsi_daily, ""),
         ("MACD rojo claro perdiendo fuerza", macd_hist_compra, None, None),
-        ("Divergencia diaria (RSI) alcista", div_daily_compra, None, None),
-        ("Divergencia semanal (RSI) alcista", div_weekly_compra, None, None),
+        ("Divergencia RSI diario alcista", div_daily_compra, None, None),
+        ("Divergencia RSI semanal alcista", div_weekly_compra, None, None),
         ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None),
         ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None),
         ("Divergencia STH Realized Price alcista", div_sth_compra, None, None),
@@ -163,8 +163,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("SMA50 semanal mayor o igual a 60%", sma50_venta, sma50w_pct, "%"),
         ("RSI diario mayor o igual a 75", rsi_daily_venta, rsi_daily, ""),
         ("MACD verde claro perdiendo fuerza", macd_hist_venta, None, None),
-        ("Divergencia diaria (RSI) bajista", div_daily_venta, None, None),
-        ("Divergencia semanal (RSI) bajista", div_weekly_venta, None, None),
+        ("Divergencia RSI diario bajista", div_daily_venta, None, None),
+        ("Divergencia RSI semanal bajista", div_weekly_venta, None, None),
         ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None),
         ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None),
         ("Divergencia STH Realized Price bajista", div_sth_venta, None, None),
