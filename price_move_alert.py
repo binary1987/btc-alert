@@ -81,22 +81,23 @@ def send_telegram(msg):
 def build_message(period_label, pct, prev_pct, is_strong_now, was_strong_before,
                    current_price, past_price, past_label):
     direction_emoji = "📈" if pct >= 0 else "📉"
+    direction_word = "de subida" if pct >= 0 else "de bajada"
     is_first = prev_pct is None
     just_became_strong = is_strong_now and not was_strong_before and not is_first
 
     if is_first:
         strong_tag = "🔥" if is_strong_now else ""
         strong_word = " FUERTE" if is_strong_now else ""
-        line1 = f"🔔{direction_emoji}{strong_tag} Movimiento {period_label}{strong_word}: {pct:+.1f}%"
+        line1 = f"🔔{direction_emoji}{strong_tag} Movimiento {period_label} {direction_word}{strong_word}: {pct:+.1f}%"
     elif just_became_strong:
         line1 = (
-            f"🔔{direction_emoji}🔥 Movimiento {period_label} pasa a FUERTE: "
+            f"🔔{direction_emoji}🔥 Movimiento {period_label} {direction_word} pasa a FUERTE: "
             f"{pct:+.1f}% (antes {prev_pct:+.1f}%)"
         )
     else:
         strong_tag = "🔥" if is_strong_now else ""
         line1 = (
-            f"🔔{direction_emoji}{strong_tag} Movimiento {period_label} continúa: "
+            f"🔔{direction_emoji}{strong_tag} Movimiento {period_label} {direction_word} continúa: "
             f"{pct:+.1f}% (antes {prev_pct:+.1f}%)"
         )
 
