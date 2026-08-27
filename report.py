@@ -304,11 +304,12 @@ def compute_sma_distance_series(closes, period=200):
     return distances
 
 
-def detect_sma200_divergence(closes, period=200, order=3, min_distance=5):
+def detect_sma_divergence(closes, period=200, order=3, min_distance=5):
     """
     Version reducida (solo compara los 2 ultimos picos/valles, no un ciclo
     completo) de la misma logica que detect_divergence, pero usando la
-    distancia % a la SMA200 en vez del RSI.
+    distancia % a una SMA(period) en vez del RSI. Sirve tanto para la SMA200
+    diaria como para la SMA50 semanal, pasando el period/closes adecuados.
     """
     distances = compute_sma_distance_series(closes, period)
     if len(distances) < order * 2 + min_distance + 2:
@@ -612,7 +613,8 @@ def main():
 
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
-    div_sma200 = detect_sma200_divergence(daily_closes, order=3, min_distance=5)
+    div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
+    div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
 
     boll_daily = compute_bollinger(daily_closes)
     boll_weekly = compute_bollinger(weekly_closes)
@@ -671,6 +673,7 @@ def main():
         f"Divergencia diaria: {div_daily}",
         f"Divergencia semanal: {div_weekly}",
         f"Divergencia SMA200 diario: {div_sma200}",
+        f"Divergencia SMA50 semanal: {div_sma50w}",
         "----------------------------------",
         f"Bollinger diario: {describe_bollinger(boll_daily)}",
         f"Bollinger semanal: {describe_bollinger(boll_weekly)}",
