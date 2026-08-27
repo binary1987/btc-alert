@@ -6,20 +6,17 @@ from email.mime.text import MIMEText
 import urllib.request
 import urllib.parse
 
-STATE_FILE = "last_threshold.txt"
-STEP = 1000
+from report import get_market_chart
 
-def get_btc_price():
-    url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
-    api_key = os.environ.get("COINGECKO_API_KEY")
-    headers = {"x-cg-demo-api-key": api_key} if api_key else {}
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=10) as r:
-        data = json.loads(r.read().decode())
-    return data["bitcoin"]["usd"]
+STATE_FILE = "last_threshold.txt"
+SHARED_PRICE_FILE = "shared_price_history.json"
+STEP = 1000
+SHARED_HISTORY_DAYS = 15  # margen de sobra, price_move_alert.py necesita al menos 8
+
 
 def current_threshold(price):
     return int(price // STEP) * STEP
+
 
 def read_last_threshold():
     if os.path.exists(STATE_FILE):
@@ -27,9 +24,21 @@ def read_last_threshold():
             return int(f.read().strip())
     return None
 
+
 def write_last_threshold(value):
     with open(STATE_FILE, "w") as f:
         f.write(str(value))
+
+
+def write_shared_price_history(daily_closes):
+    """
+    Guarda los ultimos dias de precio en un archivo compartido, para que
+    price_move_alert.py no tenga que volver a llamar a la API de CoinGecko.
+    """
+    data = daily_closes[-SHARED_HISTORY_DAYS:]
+    with open(SHARED_PRICE_FILE, "w") as f:
+        json.dump(data, f)
+
 
 def send_telegram(msg):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -39,6 +48,7 @@ def send_telegram(msg):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": chat_id, "text": msg}).encode()
     urllib.request.urlopen(url, data=data, timeout=10)
+
 
 def send_email(msg):
     user = os.environ.get("EMAIL_USER")
@@ -54,8 +64,14 @@ def send_email(msg):
         s.login(user, pwd)
         s.sendmail(user, [to], mail.as_string())
 
+
 def main():
-    price = get_btc_price()
+    prices, _ = get_market_chart(days=365)
+    daily_closes = [p for _, p in prices]
+    price = daily_closes[-1]
+
+    write_shared_price_history(daily_closes)
+
     threshold = current_threshold(price)
     last = read_last_threshold()
 
@@ -74,6 +90,7 @@ def main():
         send_telegram(msg)
         send_email(msg)
         write_last_threshold(threshold)
+
 
 if __name__ == "__main__":
     main()
