@@ -773,9 +773,11 @@ def main():
     MIN_ZONE_TIER = 3
     if compra_count >= MIN_ZONE_TIER or venta_count >= MIN_ZONE_TIER:
         if compra_count > venta_count:
-            zone_text = f"🟢 Zona de compra ({compra_count}/{total_conditions})"
+            stars = "⭐️" * compra_count
+            zone_text = f"🟢 Zona de compra ({compra_count}/{total_conditions}) {stars}"
         elif venta_count > compra_count:
-            zone_text = f"🔴 Zona de venta ({venta_count}/{total_conditions})"
+            stars = "⭐️" * venta_count
+            zone_text = f"🔴 Zona de venta ({venta_count}/{total_conditions}) {stars}"
         else:
             zone_text = f"⚠️ Zona mixta (compra {compra_count}/{total_conditions}, venta {venta_count}/{total_conditions})"
     else:
