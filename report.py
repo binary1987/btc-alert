@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# report.py
 import os
 import json
 import math
@@ -7,6 +8,7 @@ import urllib.parse
 from datetime import datetime, timezone
 
 MARKET_CHART_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+MARKET_CHART_RANGE_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
 COIN_DATA_URL = "https://api.coingecko.com/api/v3/coins/bitcoin"
 FNG_URL = "https://api.alternative.me/fng/?limit=1&format=json"
 
@@ -42,6 +44,20 @@ def get_market_chart(days=365):
     return data["prices"], data["total_volumes"]
 
 
+def get_price_range(from_ts, to_ts):
+    """
+    Devuelve la lista de precios [timestamp_ms, precio] entre dos timestamps
+    (segundos, UTC). Se usa para calcular el ATL real desde el último ATH,
+    sin la limitación de la ventana rodante de 365 dias.
+    """
+    params = urllib.parse.urlencode({"vs_currency": "usd", "from": from_ts, "to": to_ts})
+    url = f"{MARKET_CHART_RANGE_URL}?{params}"
+    req = urllib.request.Request(url, headers=cg_headers())
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.loads(r.read().decode())
+    return data["prices"]
+
+
 def get_ath():
     params = urllib.parse.urlencode({
         "localization": "false",
@@ -58,7 +74,8 @@ def get_ath():
     md = data["market_data"]
     ath = md["ath"]["usd"]
     ath_change = md["ath_change_percentage"]["usd"]
-    return ath, ath_change
+    ath_date = md["ath_date"]["usd"]  # ej: "2025-08-24T00:00:00.000Z"
+    return ath, ath_change, ath_date
 
 
 def get_fear_greed():
@@ -697,7 +714,7 @@ def main():
     fng_value, fng_text = get_fear_greed()
     fng_emoji = FNG_EMOJIS.get(fng_text, "")
 
-    ath, ath_change = get_ath()
+    ath, ath_change, ath_date = get_ath()
 
     try:
         sth_realized_price = get_sth_realized_price()
@@ -706,8 +723,27 @@ def main():
         sth_realized_price = None
 
     current_price = daily_closes[-1]
-    atl_12m = min(daily_closes)
-    atl_12m_change = ((current_price - atl_12m) / atl_12m) * 100
+
+    # --- ATL real del ciclo actual (desde el ultimo ATH hasta hoy) ---
+    # En vez de limitarnos a los ultimos 365 dias (ventana rodante que
+    # "pierde" el suelo del ciclo pasados 12 meses desde que se marco),
+    # pedimos el rango exacto desde la fecha del ATH hasta hoy.
+    try:
+        ath_dt = datetime.strptime(ath_date, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+        ath_ts = int(ath_dt.timestamp())
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        range_prices = get_price_range(ath_ts, now_ts)
+        cycle_closes = [p for _, p in range_prices]
+        if not cycle_closes:
+            raise ValueError("rango vacio")
+        atl_cycle = min(cycle_closes)
+        atl_label = "mínimo desde el último ATH"
+    except Exception as e:
+        print(f"Aviso: no se pudo calcular el ATL del ciclo ({e}), usando fallback de 12 meses")
+        atl_cycle = min(daily_closes)
+        atl_label = "mínimo últimos 12 meses"
+
+    atl_cycle_change = ((current_price - atl_cycle) / atl_cycle) * 100
 
     sma_200_daily = compute_sma(daily_closes, 200)
     sma_50_weekly = compute_sma(weekly_closes, 50)
@@ -775,7 +811,7 @@ def main():
         f"Bollinger semanal: {describe_bollinger(boll_weekly)}",
         "----------------------------------",
         f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
-        f"ATL: {atl_12m:,.0f} $ ({atl_12m_change:+.1f}%) (mínimo últimos 12 meses)",
+        f"ATL: {atl_cycle:,.0f} $ ({atl_cycle_change:+.1f}%) ({atl_label})",
         "----------------------------------",
     ]
 
