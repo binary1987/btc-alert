@@ -28,6 +28,8 @@ FNG_EMOJIS = {
     "Codicia Extrema": "🔥",
 }
 
+LAST_REPORT_TIER_FILE = "last_report_tier.txt"
+
 
 def cg_headers():
     api_key = os.environ.get("COINGECKO_API_KEY")
@@ -674,6 +676,29 @@ def historical_zone_flag(pct, buy_threshold, sell_threshold, buy_strong=None, se
     return ""
 
 
+def read_last_report_tiers(path=LAST_REPORT_TIER_FILE):
+    """
+    Devuelve (tier_compra, tier_venta) del informe de AYER, o (None, None)
+    si es la primera vez que corre (asi no mostramos "creciendo/decreciendo"
+    sin tener con que comparar).
+    """
+    if os.path.exists(path):
+        with open(path) as f:
+            content = f.read().strip()
+        if content:
+            try:
+                compra_str, venta_str = content.split(",")
+                return int(compra_str), int(venta_str)
+            except ValueError:
+                pass
+    return None, None
+
+
+def write_last_report_tiers(tier_compra, tier_venta, path=LAST_REPORT_TIER_FILE):
+    with open(path, "w") as f:
+        f.write(f"{tier_compra},{tier_venta}")
+
+
 def send_telegram(msg):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -725,9 +750,6 @@ def main():
     current_price = daily_closes[-1]
 
     # --- ATL real del ciclo actual (desde el ultimo ATH hasta hoy) ---
-    # En vez de limitarnos a los ultimos 365 dias (ventana rodante que
-    # "pierde" el suelo del ciclo pasados 12 meses desde que se marco),
-    # pedimos el rango exacto desde la fecha del ATH hasta hoy.
     try:
         ath_dt = datetime.strptime(ath_date, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
         ath_ts = int(ath_dt.timestamp())
@@ -770,18 +792,34 @@ def main():
     venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
     total_conditions = len(compra_items)
 
+    # --- Comparacion con el informe de ayer para creciendo/decreciendo ---
+    last_report_compra, last_report_venta = read_last_report_tiers()
+    trend_word = ""
+
     MIN_ZONE_TIER = 3
     if compra_count >= MIN_ZONE_TIER or venta_count >= MIN_ZONE_TIER:
         if compra_count > venta_count:
+            if last_report_compra is not None:
+                if compra_count > last_report_compra:
+                    trend_word = " creciendo"
+                elif compra_count < last_report_compra:
+                    trend_word = " decreciendo"
             stars = "⭐️" * compra_count
-            zone_text = f"🟢 Zona de compra ({compra_count}/{total_conditions}) {stars}"
+            zone_text = f"🟢 Zona de compra{trend_word} ({compra_count}/{total_conditions}) {stars}"
         elif venta_count > compra_count:
+            if last_report_venta is not None:
+                if venta_count > last_report_venta:
+                    trend_word = " creciendo"
+                elif venta_count < last_report_venta:
+                    trend_word = " decreciendo"
             stars = "⭐️" * venta_count
-            zone_text = f"🔴 Zona de venta ({venta_count}/{total_conditions}) {stars}"
+            zone_text = f"🔴 Zona de venta{trend_word} ({venta_count}/{total_conditions}) {stars}"
         else:
             zone_text = f"⚠️ Zona mixta (compra {compra_count}/{total_conditions}, venta {venta_count}/{total_conditions})"
     else:
         zone_text = "➖ Zona neutral"
+
+    write_last_report_tiers(compra_count, venta_count)
 
     corto, medio, largo = compute_trend_summary(
         rsi_daily, rsi_weekly, rsi_monthly,
