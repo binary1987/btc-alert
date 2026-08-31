@@ -3,6 +3,7 @@
 import os
 import json
 import math
+import time
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
@@ -58,6 +59,65 @@ def get_price_range(from_ts, to_ts):
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read().decode())
     return data["prices"]
+
+
+def get_btc_weekly_closes_twelvedata(outputsize=260, retries=3, retry_delay=10):
+    """
+    Historico semanal de BTC/USD via Twelve Data, necesario para la SMA200
+    semanal: CoinGecko en el plan gratuito solo da 365 dias (~52 semanas),
+    muy por debajo de las 200 semanas que hacen falta. Twelve Data si
+    permite pedir varios años de golpe. Devuelve una lista de closes en
+    orden cronologico (ascendente).
+    """
+    api_key = os.environ.get("TWELVEDATA_API_KEY")
+    params = urllib.parse.urlencode({
+        "symbol": "BTC/USD",
+        "interval": "1week",
+        "outputsize": outputsize,
+        "order": "ASC",
+        "apikey": api_key,
+    })
+    url = f"https://api.twelvedata.com/time_series?{params}"
+
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            if "values" not in data:
+                raise ValueError(f"respuesta sin 'values': {data}")
+            return [float(v["close"]) for v in data["values"]]
+        except Exception as e:
+            last_error = e
+            print(f"Aviso: fallo al pedir BTC/USD semanal de Twelve Data (intento {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    print(f"Aviso: no se pudo obtener el historico semanal de Twelve Data tras {retries} intentos ({last_error})")
+    return []
+
+
+def get_sma200_weekly_data(current_price):
+    """
+    Calcula la distancia % del precio actual a la SMA200 semanal, y su
+    divergencia, usando el historico semanal de Twelve Data. Si algo falla
+    (sin key, sin datos suficientes, error de red), devuelve (None, "sin
+    datos suficientes") para que esa condicion simplemente no puntue, sin
+    romper el resto del sistema.
+    """
+    weekly_closes_td = get_btc_weekly_closes_twelvedata(outputsize=260)
+    if len(weekly_closes_td) < 200:
+        return None, "sin datos suficientes"
+
+    sma200w = compute_sma(weekly_closes_td, 200)
+    sma200w_pct = None
+    if sma200w:
+        sma200w_pct = ((current_price - sma200w) / sma200w) * 100
+
+    div_sma200w = detect_sma_divergence(weekly_closes_td, period=200, order=2, min_distance=3)
+
+    return sma200w_pct, div_sma200w
 
 
 def get_ath():
@@ -784,9 +844,12 @@ def main():
 
     alignment = build_alignment(rsi_daily, macd_daily_hist, div_daily, div_weekly, boll_daily_signal)
 
+    sma200w_pct, div_sma200w = get_sma200_weekly_data(current_price)
+
     _, compra_items, venta_items = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
-        sth_realized_price=sth_realized_price, sth_divergence=div_sth, required=8
+        sth_realized_price=sth_realized_price, sth_divergence=div_sth,
+        sma200w_pct=sma200w_pct, div_sma200w=div_sma200w, required=8
     )
     compra_count = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
@@ -864,6 +927,10 @@ def main():
     if sma50w_pct is not None:
         flag = historical_zone_flag(sma50w_pct, buy_threshold=-20, sell_threshold=60)
         lines.append(f"Distancia a SMA50 semanal: {sma50w_pct:+.1f}%{flag}")
+    if sma200w_pct is not None:
+        flag = historical_zone_flag(sma200w_pct, buy_threshold=-5, sell_threshold=100)
+        lines.append(f"Distancia a SMA200 semanal: {sma200w_pct:+.1f}%{flag}")
+        lines.append(f"Divergencia SMA200 semanal: {div_sma200w}")
 
     lines += [
         "----------------------------------",
