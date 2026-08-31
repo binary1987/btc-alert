@@ -6,7 +6,7 @@ import urllib.parse
 
 from report import (
     get_market_chart, group_last, get_fear_greed, get_sth_realized_price,
-    append_sth_history, detect_sth_divergence,
+    append_sth_history, detect_sth_divergence, get_sma200_weekly_data,
 )
 from strategy import evaluate_strict_signal
 
@@ -57,7 +57,7 @@ def send_telegram(msg):
 
 
 def build_message(direction, items):
-    """Mensaje completo con las 15 condiciones, usado cuando el nivel SUBE."""
+    """Mensaje completo con las condiciones, usado cuando el nivel SUBE."""
     conditions_met = sum(1 for _, pts, _, _ in items if pts >= 1)
     total_conditions = len(items)
 
@@ -159,10 +159,15 @@ def main():
     sth_divergence = detect_sth_divergence()
     print(f"Divergencia STH: {sth_divergence}")
 
+    sma200w_pct, div_sma200w = get_sma200_weekly_data(daily_closes[-1])
+    print(f"SMA200 semanal: {sma200w_pct}, divergencia: {div_sma200w}")
+
     _, compra_items, venta_items = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price,
         sth_divergence=sth_divergence,
+        sma200w_pct=sma200w_pct,
+        div_sma200w=div_sma200w,
         required=8,
     )
 
