@@ -18,6 +18,8 @@ Orden fijo de importancia (de mas a menos determinante):
   13. Divergencia STH Realized Price
   14. Bollinger diario (tocando banda superior/inferior)
   15. Bollinger semanal (tocando banda superior/inferior)
+  16. SMA200 semanal (fuente: Twelve Data, histórico mayor a 365 días)
+  17. Divergencia SMA200 semanal
 
 Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
 La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
@@ -26,7 +28,7 @@ correspondiente, que es independiente del umbral de %. Esto evita el problema
 de que los picos tardios de un ciclo tengan % menores aunque el precio sea
 mas extremo (rendimientos decrecientes).
 
-Puntuacion maxima total: 15 puntos.
+Puntuacion maxima total: 17 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
@@ -63,9 +65,17 @@ def macd_weakening(histogram):
 
 def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
                             sth_realized_price=None, sth_divergence="sin datos suficientes",
+                            sma200w_pct=None, div_sma200w="sin datos suficientes",
                             required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA, en el orden fijo acordado.
+
+    sma200w_pct: distancia % del precio actual a la SMA200 SEMANAL, ya
+    calculada fuera de esta funcion (necesita un historico de precios de
+    Twelve Data, no de los daily_closes/weekly_closes de CoinGecko, que
+    solo cubren 365 dias y no bastan para 200 semanas).
+    div_sma200w: divergencia de esa misma SMA200 semanal, tambien
+    precalculada fuera.
 
     Devuelve (señal_o_None, compra_items, venta_items)
     donde cada *_items es una lista ordenada de tuplas:
@@ -105,6 +115,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     sma50_compra = 1 if (sma50w_pct is not None and sma50w_pct <= -20) else 0
     sma50_venta = 1 if (sma50w_pct is not None and sma50w_pct >= 60) else 0
 
+    sma200w_compra = 1 if (sma200w_pct is not None and sma200w_pct <= -5) else 0
+    sma200w_venta = 1 if (sma200w_pct is not None and sma200w_pct >= 100) else 0
+
     rsi_weekly_compra = 1 if (rsi_weekly is not None and rsi_weekly <= 40) else 0
     rsi_weekly_venta = 1 if (rsi_weekly is not None and rsi_weekly >= 60) else 0
 
@@ -141,6 +154,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     div_sth_compra = 1 if "alcista" in sth_divergence else 0
     div_sth_venta = 1 if "bajista" in sth_divergence else 0
 
+    div_sma200w_compra = 1 if "alcista" in div_sma200w else 0
+    div_sma200w_venta = 1 if "bajista" in div_sma200w else 0
+
     boll_daily = compute_bollinger(daily_closes)
     boll_sig = bollinger_signal(boll_daily)
     boll_compra = 1 if boll_sig == "sobreventa" else 0
@@ -167,6 +183,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia STH Realized Price alcista", div_sth_compra, None, None),
         ("Bollinger diario tocando banda inferior", boll_compra, None, None),
         ("Bollinger semanal tocando banda inferior", boll_weekly_compra, None, None),
+        ("SMA200 semanal menor o igual a -5%", sma200w_compra, sma200w_pct, "%"),
+        ("Divergencia SMA200 semanal alcista", div_sma200w_compra, None, None),
     ]
 
     venta_items = [
@@ -185,6 +203,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia STH Realized Price bajista", div_sth_venta, None, None),
         ("Bollinger diario tocando banda superior", boll_venta, None, None),
         ("Bollinger semanal tocando banda superior", boll_weekly_venta, None, None),
+        ("SMA200 semanal mayor o igual a 100%", sma200w_venta, sma200w_pct, "%"),
+        ("Divergencia SMA200 semanal bajista", div_sma200w_venta, None, None),
     ]
 
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
