@@ -366,12 +366,12 @@ def describe_macd(histogram):
     yesterday = histogram[-2]
 
     color_now = "verde" if today >= 0 else "rojo"
+    direction = "alcista" if color_now == "verde" else "bajista"
     strengthening = abs(today) > abs(yesterday)
-    shade = "oscuro" if strengthening else "claro"
+    momentum_word = "reforzándose" if strengthening else "agotándose"
     emoji = "🟢" if color_now == "verde" else "🔴"
-    momentum_text = "impulso reforzándose" if strengthening else "impulso agotándose"
 
-    text = f"{emoji} {color_now} {shade} ({momentum_text})"
+    text = f"{emoji} impulso {direction} {momentum_word}"
 
     cross = macd_cross_direction(histogram)
     if cross:
