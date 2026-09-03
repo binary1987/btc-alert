@@ -20,6 +20,7 @@ Orden fijo de importancia (de mas a menos determinante):
   15. Bollinger semanal (tocando banda superior/inferior)
   16. SMA200 semanal (fuente: Twelve Data, histórico mayor a 365 días)
   17. Divergencia SMA200 semanal
+  18. RSI diario y semanal combinados (ambos en la misma zona extrema a la vez)
 
 Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
 La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
@@ -28,7 +29,7 @@ correspondiente, que es independiente del umbral de %. Esto evita el problema
 de que los picos tardios de un ciclo tengan % menores aunque el precio sea
 mas extremo (rendimientos decrecientes).
 
-Puntuacion maxima total: 17 puntos.
+Puntuacion maxima total: 18 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
@@ -133,6 +134,12 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     macd_hist_compra = 1 if (len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak) else 0
     macd_hist_venta = 1 if (len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak) else 0
 
+    # RSI diario y semanal combinados: ambos en zona extrema a la vez
+    # (reutiliza los mismos umbrales de rsi_daily_compra/venta y
+    # rsi_weekly_compra/venta, que ya son 25/75 diario y 40/60 semanal)
+    rsi_combo_compra = 1 if (rsi_daily_compra and rsi_weekly_compra) else 0
+    rsi_combo_venta = 1 if (rsi_daily_venta and rsi_weekly_venta) else 0
+
     # --- Condiciones de divergencia (independientes del umbral de %) ---
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
@@ -185,6 +192,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Bollinger semanal tocando banda inferior", boll_weekly_compra, None, None),
         ("SMA200 semanal menor o igual a -5%", sma200w_compra, sma200w_pct, "%"),
         ("Divergencia SMA200 semanal alcista", div_sma200w_compra, None, None),
+        ("RSI diario y semanal combinados en sobreventa", rsi_combo_compra, None, None),
     ]
 
     venta_items = [
@@ -205,6 +213,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Bollinger semanal tocando banda superior", boll_weekly_venta, None, None),
         ("SMA200 semanal mayor o igual a 100%", sma200w_venta, sma200w_pct, "%"),
         ("Divergencia SMA200 semanal bajista", div_sma200w_venta, None, None),
+        ("RSI diario y semanal combinados en sobrecompra", rsi_combo_venta, None, None),
     ]
 
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
