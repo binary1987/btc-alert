@@ -23,6 +23,8 @@ Orden fijo de importancia (de mas a menos determinante):
   18. RSI diario y semanal combinados (ambos en la misma zona extrema a la vez)
   19. MACD línea semanal vs cero
   20. MACD histograma semanal perdiendo fuerza
+  21. Pico de volumen diario (>=2.5x la media de 30 dias)
+  22. Pico de volumen semanal (>=1.8x la media de 12 semanas)
 
 Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
 La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
@@ -31,12 +33,16 @@ correspondiente, que es independiente del umbral de %. Esto evita el problema
 de que los picos tardios de un ciclo tengan % menores aunque el precio sea
 mas extremo (rendimientos decrecientes).
 
-Puntuacion maxima total: 20 puntos.
+Los picos de volumen siguen la misma logica "contraria" que el resto: un
+pico a la baja (mucha venta) se interpreta como posible capitulacion ->
+compra; un pico al alza (mucha compra) como posible euforia -> venta.
+
+Puntuacion maxima total: 22 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
     detect_divergence, detect_sma_divergence,
-    compute_bollinger, bollinger_signal,
+    compute_bollinger, bollinger_signal, detect_volume_spike,
 )
 
 
@@ -69,6 +75,7 @@ def macd_weakening(histogram):
 def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
                             sth_realized_price=None, sth_divergence="sin datos suficientes",
                             sma200w_pct=None, div_sma200w="sin datos suficientes",
+                            daily_volumes=None, weekly_volumes=None,
                             required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA, en el orden fijo acordado.
@@ -151,6 +158,23 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     rsi_combo_compra = 1 if (rsi_daily_compra and rsi_weekly_compra) else 0
     rsi_combo_venta = 1 if (rsi_daily_venta and rsi_weekly_venta) else 0
 
+    # Picos de volumen: logica "contraria" (pico a la baja = compra, pico
+    # al alza = venta). Umbrales distintos porque el volumen diario es mas
+    # ruidoso que el semanal (que ya viene suavizado al ser una suma).
+    vol_spike_daily = None
+    if daily_volumes:
+        vol_spike_daily = detect_volume_spike(daily_closes, daily_volumes, avg_period=30, multiplier=2.5)
+
+    vol_spike_weekly = None
+    if weekly_volumes:
+        vol_spike_weekly = detect_volume_spike(weekly_closes, weekly_volumes, avg_period=12, multiplier=1.8)
+
+    vol_daily_compra = 1 if vol_spike_daily == "bajista" else 0
+    vol_daily_venta = 1 if vol_spike_daily == "alcista" else 0
+
+    vol_weekly_compra = 1 if vol_spike_weekly == "bajista" else 0
+    vol_weekly_venta = 1 if vol_spike_weekly == "alcista" else 0
+
     # --- Condiciones de divergencia (independientes del umbral de %) ---
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
@@ -206,6 +230,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("RSI diario y semanal combinados en sobreventa", rsi_combo_compra, None, None),
         ("MACD línea semanal menor que 0", macd_line_weekly_compra, None, None),
         ("MACD histograma semanal rojo perdiendo fuerza", macd_hist_weekly_compra, None, None),
+        ("Pico de volumen diario a la baja (posible capitulación)", vol_daily_compra, None, None),
+        ("Pico de volumen semanal a la baja (posible capitulación)", vol_weekly_compra, None, None),
     ]
 
     venta_items = [
@@ -229,6 +255,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("RSI diario y semanal combinados en sobrecompra", rsi_combo_venta, None, None),
         ("MACD línea semanal mayor que 0", macd_line_weekly_venta, None, None),
         ("MACD histograma semanal verde perdiendo fuerza", macd_hist_weekly_venta, None, None),
+        ("Pico de volumen diario al alza (posible euforia)", vol_daily_venta, None, None),
+        ("Pico de volumen semanal al alza (posible euforia)", vol_weekly_venta, None, None),
     ]
 
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
