@@ -1,1 +1,1 @@
-{"tier_compra": 2, "tier_venta": 2, "active_compra": ["MACD rojo claro perdiendo fuerza", "Divergencia RSI semanal alcista"], "active_venta": ["MACD linea mayor que 0", "F&G mayor o igual a 55"]}
+{"tier_compra": 1, "tier_venta": 3, "active_compra": ["Divergencia RSI semanal alcista"], "active_venta": ["MACD linea mayor que 0", "F&G mayor o igual a 55", "MACD verde claro perdiendo fuerza"]}
