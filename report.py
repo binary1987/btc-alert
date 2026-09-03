@@ -260,6 +260,25 @@ def group_last(prices, keyfunc):
     return [groups[k] for k in order]
 
 
+def group_sum(values, keyfunc):
+    """
+    Igual que group_last, pero SUMA los valores de cada grupo en vez de
+    quedarse con el ultimo. Se usa para el volumen semanal (la suma del
+    volumen de los 7 dias de la semana), a diferencia del precio semanal
+    que toma el ultimo cierre disponible.
+    """
+    groups = {}
+    order = []
+    for ts, value in values:
+        dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        key = keyfunc(dt)
+        if key not in groups:
+            order.append(key)
+            groups[key] = 0
+        groups[key] += value
+    return [groups[k] for k in order]
+
+
 def compute_rsi(closes, period=14):
     if len(closes) < 3:
         return None
@@ -622,6 +641,36 @@ def compute_volume_confirmation(daily_closes, daily_volumes, avg_period=30):
     return None
 
 
+def detect_volume_spike(closes, volumes, avg_period, multiplier):
+    """
+    Detecta un PICO de volumen (no solo "algo por encima de lo normal" como
+    compute_volume_confirmation): el volumen actual tiene que superar el
+    volumen medio de 'avg_period' periodos anteriores multiplicado por
+    'multiplier'. Devuelve 'alcista' (pico con precio al alza, posible
+    euforia), 'bajista' (pico con precio a la baja, posible capitulacion),
+    o None si no hay pico o no hay datos suficientes.
+    """
+    if len(volumes) < avg_period + 1 or len(closes) < 2:
+        return None
+
+    avg_volume = sum(volumes[-avg_period - 1:-1]) / avg_period
+    current_volume = volumes[-1]
+
+    if avg_volume == 0:
+        return None
+
+    relative_volume = current_volume / avg_volume
+    if relative_volume < multiplier:
+        return None
+
+    price_change = closes[-1] - closes[-2]
+    if price_change > 0:
+        return "alcista"
+    if price_change < 0:
+        return "bajista"
+    return None
+
+
 def compute_trend_summary(rsi_daily, rsi_weekly, rsi_monthly, macd_daily_hist,
                            macd_weekly_hist, boll_daily, boll_weekly, fng_value,
                            daily_closes, daily_volumes):
@@ -777,6 +826,7 @@ def main():
     daily_closes = [p for _, p in prices]
     daily_volumes = [v for _, v in volumes]
     weekly_closes = group_last(prices, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
+    weekly_volumes = group_sum(volumes, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
     monthly_closes = group_last(prices, lambda dt: (dt.year, dt.month))
 
     rsi_daily = compute_rsi(daily_closes)
@@ -849,7 +899,8 @@ def main():
     _, compra_items, venta_items = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price, sth_divergence=div_sth,
-        sma200w_pct=sma200w_pct, div_sma200w=div_sma200w, required=8
+        sma200w_pct=sma200w_pct, div_sma200w=div_sma200w,
+        daily_volumes=daily_volumes, weekly_volumes=weekly_volumes, required=8
     )
     compra_count = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
