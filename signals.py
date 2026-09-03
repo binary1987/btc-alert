@@ -5,7 +5,7 @@ import urllib.request
 import urllib.parse
 
 from report import (
-    get_market_chart, group_last, get_fear_greed, get_sth_realized_price,
+    get_market_chart, group_last, group_sum, get_fear_greed, get_sth_realized_price,
     append_sth_history, detect_sth_divergence, get_sma200_weekly_data,
 )
 from strategy import evaluate_strict_signal
@@ -142,7 +142,9 @@ def process_direction(direction, items, last_tier, last_active):
 def main():
     prices, volumes = get_market_chart(days=365)
     daily_closes = [p for _, p in prices]
+    daily_volumes = [v for _, v in volumes]
     weekly_closes = group_last(prices, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
+    weekly_volumes = group_sum(volumes, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
 
     fng_value, _ = get_fear_greed()
 
@@ -168,6 +170,8 @@ def main():
         sth_divergence=sth_divergence,
         sma200w_pct=sma200w_pct,
         div_sma200w=div_sma200w,
+        daily_volumes=daily_volumes,
+        weekly_volumes=weekly_volumes,
         required=8,
     )
 
