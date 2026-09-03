@@ -21,6 +21,8 @@ Orden fijo de importancia (de mas a menos determinante):
   16. SMA200 semanal (fuente: Twelve Data, histórico mayor a 365 días)
   17. Divergencia SMA200 semanal
   18. RSI diario y semanal combinados (ambos en la misma zona extrema a la vez)
+  19. MACD línea semanal vs cero
+  20. MACD histograma semanal perdiendo fuerza
 
 Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
 La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
@@ -29,7 +31,7 @@ correspondiente, que es independiente del umbral de %. Esto evita el problema
 de que los picos tardios de un ciclo tengan % menores aunque el precio sea
 mas extremo (rendimientos decrecientes).
 
-Puntuacion maxima total: 18 puntos.
+Puntuacion maxima total: 20 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, ema_series, compute_sma,
@@ -90,6 +92,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     macd_hist = compute_macd_histogram(daily_closes)
     macd_line = compute_macd_line(daily_closes)
     weak = macd_weakening(macd_hist)
+    macd_weekly_hist = compute_macd_histogram(weekly_closes)
+    macd_weekly_line = compute_macd_line(weekly_closes)
+    weak_weekly = macd_weakening(macd_weekly_hist)
     current_price = daily_closes[-1]
 
     sth_pct_diff = None
@@ -133,6 +138,12 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
 
     macd_hist_compra = 1 if (len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak) else 0
     macd_hist_venta = 1 if (len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak) else 0
+
+    macd_line_weekly_compra = 1 if (len(macd_weekly_line) >= 1 and macd_weekly_line[-1] < 0) else 0
+    macd_line_weekly_venta = 1 if (len(macd_weekly_line) >= 1 and macd_weekly_line[-1] > 0) else 0
+
+    macd_hist_weekly_compra = 1 if (len(macd_weekly_hist) >= 2 and macd_weekly_hist[-1] < 0 and weak_weekly) else 0
+    macd_hist_weekly_venta = 1 if (len(macd_weekly_hist) >= 2 and macd_weekly_hist[-1] >= 0 and weak_weekly) else 0
 
     # RSI diario y semanal combinados: ambos en zona extrema a la vez
     # (reutiliza los mismos umbrales de rsi_daily_compra/venta y
@@ -193,6 +204,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("SMA200 semanal menor o igual a -5%", sma200w_compra, sma200w_pct, "%"),
         ("Divergencia SMA200 semanal alcista", div_sma200w_compra, None, None),
         ("RSI diario y semanal combinados en sobreventa", rsi_combo_compra, None, None),
+        ("MACD línea semanal menor que 0", macd_line_weekly_compra, None, None),
+        ("MACD histograma semanal rojo perdiendo fuerza", macd_hist_weekly_compra, None, None),
     ]
 
     venta_items = [
@@ -214,6 +227,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("SMA200 semanal mayor o igual a 100%", sma200w_venta, sma200w_pct, "%"),
         ("Divergencia SMA200 semanal bajista", div_sma200w_venta, None, None),
         ("RSI diario y semanal combinados en sobrecompra", rsi_combo_venta, None, None),
+        ("MACD línea semanal mayor que 0", macd_line_weekly_venta, None, None),
+        ("MACD histograma semanal verde perdiendo fuerza", macd_hist_weekly_venta, None, None),
     ]
 
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
