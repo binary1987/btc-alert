@@ -112,15 +112,23 @@ def build_deactivated_message(direction, new_tier, old_tier):
     ])
 
 
-def process_direction(direction, items, last_tier, last_active):
+def process_direction(direction, items, last_tier, last_active, veto=False):
     """
     Evalua un lado (COMPRA o VENTA), decide si hay que avisar, envia el
     mensaje correspondiente, y devuelve (tier_actual, lista_activas_actual).
+
+    Si 'veto' es True (RSI diario + F&G contradicen esta zona), NO se
+    manda ningun mensaje, pero el nivel real se sigue registrando en el
+    estado para que la comparacion del dia siguiente sea correcta cuando
+    el veto se levante.
     """
     current_tier = sum(1 for _, pts, _, _ in items if pts >= 1)
     current_active = [text for text, pts, _, _ in items if pts >= 1]
 
-    if current_tier > last_tier and current_tier >= MIN_TIER_TO_NOTIFY:
+    if veto:
+        print(f"{direction}: nivel {current_tier} pero VETADO por contexto (RSI+F&G), no se avisa")
+
+    elif current_tier > last_tier and current_tier >= MIN_TIER_TO_NOTIFY:
         msg = build_message(direction, items)
         print(f"AVISO ({direction}, sube):", msg)
         send_telegram(msg)
@@ -164,7 +172,7 @@ def main():
     sma200w_pct, div_sma200w = get_sma200_weekly_data(daily_closes[-1])
     print(f"SMA200 semanal: {sma200w_pct}, divergencia: {div_sma200w}")
 
-    _, compra_items, venta_items = evaluate_strict_signal(
+    _, compra_items, venta_items, veto_compra, veto_venta = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price,
         sth_divergence=sth_divergence,
@@ -181,10 +189,10 @@ def main():
     print(f"Nivel VENTA anterior: {state['tier_venta']}")
 
     tier_compra_now, active_compra_now = process_direction(
-        "COMPRA", compra_items, state["tier_compra"], state["active_compra"]
+        "COMPRA", compra_items, state["tier_compra"], state["active_compra"], veto=veto_compra
     )
     tier_venta_now, active_venta_now = process_direction(
-        "VENTA", venta_items, state["tier_venta"], state["active_venta"]
+        "VENTA", venta_items, state["tier_venta"], state["active_venta"], veto=veto_venta
     )
 
     print(f"Nivel COMPRA actual: {tier_compra_now}/{len(compra_items)}")
