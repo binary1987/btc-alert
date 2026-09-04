@@ -896,7 +896,7 @@ def main():
 
     sma200w_pct, div_sma200w = get_sma200_weekly_data(current_price)
 
-    _, compra_items, venta_items = evaluate_strict_signal(
+    _, compra_items, venta_items, veto_compra, veto_venta = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price, sth_divergence=div_sth,
         sma200w_pct=sma200w_pct, div_sma200w=div_sma200w,
@@ -911,8 +911,18 @@ def main():
     trend_word = ""
 
     MIN_ZONE_TIER = 3
-    if compra_count >= MIN_ZONE_TIER or venta_count >= MIN_ZONE_TIER:
-        if compra_count > venta_count:
+    compra_eligible = compra_count >= MIN_ZONE_TIER and not veto_compra
+    venta_eligible = venta_count >= MIN_ZONE_TIER and not veto_venta
+
+    if compra_eligible or venta_eligible:
+        if compra_eligible and venta_eligible:
+            dominant = "compra" if compra_count > venta_count else ("venta" if venta_count > compra_count else "mixta")
+        elif compra_eligible:
+            dominant = "compra"
+        else:
+            dominant = "venta"
+
+        if dominant == "compra":
             if last_report_compra is not None:
                 if compra_count > last_report_compra:
                     trend_word = " creciendo"
@@ -920,7 +930,7 @@ def main():
                     trend_word = " decreciendo"
             stars = "⭐️" * compra_count
             zone_text = f"🟢 Zona de compra{trend_word} ({compra_count}/{total_conditions}) {stars}"
-        elif venta_count > compra_count:
+        elif dominant == "venta":
             if last_report_venta is not None:
                 if venta_count > last_report_venta:
                     trend_word = " creciendo"
@@ -932,6 +942,16 @@ def main():
             zone_text = f"⚠️ Zona mixta (compra {compra_count}/{total_conditions}, venta {venta_count}/{total_conditions})"
     else:
         zone_text = "➖ Zona neutral"
+
+    # Aviso informativo si el veto de contexto bloqueo una zona que, por
+    # conteo, habria estado activa (RSI diario y F&G contradicen la zona).
+    veto_notes = []
+    if compra_count >= MIN_ZONE_TIER and veto_compra:
+        veto_notes.append(f"compra bloqueada por contexto (RSI {rsi_daily:.0f}, F&G {fng_value})")
+    if venta_count >= MIN_ZONE_TIER and veto_venta:
+        veto_notes.append(f"venta bloqueada por contexto (RSI {rsi_daily:.0f}, F&G {fng_value})")
+    if veto_notes:
+        zone_text += " | " + " | ".join(veto_notes)
 
     write_last_report_tiers(compra_count, venta_count)
 
