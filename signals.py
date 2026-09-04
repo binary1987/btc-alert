@@ -117,29 +117,34 @@ def process_direction(direction, items, last_tier, last_active, veto=False):
     Evalua un lado (COMPRA o VENTA), decide si hay que avisar, envia el
     mensaje correspondiente, y devuelve (tier_actual, lista_activas_actual).
 
-    Si 'veto' es True (RSI diario + F&G contradicen esta zona), NO se
-    manda ningun mensaje, pero el nivel real se sigue registrando en el
-    estado para que la comparacion del dia siguiente sea correcta cuando
-    el veto se levante.
+    El veto (RSI diario + F&G contradicen esta zona) bloquea los mensajes
+    de "sube" y "decrece" (que siguen afirmando que la zona esta activa),
+    pero NUNCA bloquea el mensaje de "YA NO ACTIVA": ese solo informa de
+    que la zona se desactivo, no contradice nada del contexto, y conviene
+    que siempre llegue para no dejar al usuario pensando que sigue activa.
     """
     current_tier = sum(1 for _, pts, _, _ in items if pts >= 1)
     current_active = [text for text, pts, _, _ in items if pts >= 1]
 
-    if veto:
-        print(f"{direction}: nivel {current_tier} pero VETADO por contexto (RSI+F&G), no se avisa")
-
-    elif current_tier > last_tier and current_tier >= MIN_TIER_TO_NOTIFY:
-        msg = build_message(direction, items)
-        print(f"AVISO ({direction}, sube):", msg)
-        send_telegram(msg)
+    if current_tier > last_tier and current_tier >= MIN_TIER_TO_NOTIFY:
+        if veto:
+            print(f"{direction}: nivel {current_tier} pero VETADO por contexto (RSI+F&G), no se avisa (subida)")
+        else:
+            msg = build_message(direction, items)
+            print(f"AVISO ({direction}, sube):", msg)
+            send_telegram(msg)
 
     elif current_tier < last_tier:
         if current_tier >= MIN_TIER_TO_NOTIFY:
-            dropped = [c for c in last_active if c not in current_active]
-            msg = build_decrease_message(direction, current_tier, last_tier, dropped)
-            print(f"AVISO ({direction}, decrece):", msg)
-            send_telegram(msg)
+            if veto:
+                print(f"{direction}: nivel {current_tier} pero VETADO por contexto (RSI+F&G), no se avisa (decrece)")
+            else:
+                dropped = [c for c in last_active if c not in current_active]
+                msg = build_decrease_message(direction, current_tier, last_tier, dropped)
+                print(f"AVISO ({direction}, decrece):", msg)
+                send_telegram(msg)
         elif last_tier >= MIN_TIER_TO_NOTIFY:
+            # La desactivacion siempre se avisa, pase lo que pase con el veto.
             msg = build_deactivated_message(direction, current_tier, last_tier)
             print(f"AVISO ({direction}, desactivada):", msg)
             send_telegram(msg)
