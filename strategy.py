@@ -37,6 +37,17 @@ Los picos de volumen siguen la misma logica "contraria" que el resto: un
 pico a la baja (mucha venta) se interpreta como posible capitulacion ->
 compra; un pico al alza (mucha compra) como posible euforia -> venta.
 
+VETO DE CONTEXTO: con 22 condiciones, algunas de bajo peso pueden alinearse
+por casualidad y activar una zona que contradice lo que dicen los
+indicadores mas fiables (RSI diario y Fear & Greed). Para evitarlo:
+  - Zona de COMPRA se BLOQUEA si RSI diario >= 60 Y F&G >= 60 a la vez
+    (mercado caro + codicia, contradice comprar).
+  - Zona de VENTA se BLOQUEA si RSI diario <= 40 Y F&G <= 40 a la vez
+    (mercado barato + miedo, contradice vender).
+El veto no altera el conteo de condiciones (compra_conditions_met /
+venta_conditions_met), solo se devuelve aparte para que quien reciba el
+resultado decida no avisar, aunque el nivel siga contando internamente.
+
 Puntuacion maxima total: 22 puntos.
 """
 from report import (
@@ -87,7 +98,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     div_sma200w: divergencia de esa misma SMA200 semanal, tambien
     precalculada fuera.
 
-    Devuelve (señal_o_None, compra_items, venta_items)
+    Devuelve (señal_o_None, compra_items, venta_items, veto_compra, veto_venta)
     donde cada *_items es una lista ordenada de tuplas:
         (texto_condicion, puntos, valor_o_None, unidad_o_None)
     puntos es 0 o 1. unidad es "%" para porcentajes, "" para numeros sin
@@ -262,10 +273,17 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_conditions_met = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
 
+    # Veto de contexto: bloquea el aviso si los indicadores mas fiables
+    # (RSI diario + F&G) contradicen abiertamente la zona activada.
+    veto_compra = bool(rsi_daily is not None and fng_value is not None
+                        and rsi_daily >= 60 and fng_value >= 60)
+    veto_venta = bool(rsi_daily is not None and fng_value is not None
+                       and rsi_daily <= 40 and fng_value <= 40)
+
     signal = None
-    if compra_conditions_met >= required:
+    if compra_conditions_met >= required and not veto_compra:
         signal = "COMPRA"
-    elif venta_conditions_met >= required:
+    elif venta_conditions_met >= required and not veto_venta:
         signal = "VENTA"
 
-    return signal, compra_items, venta_items
+    return signal, compra_items, venta_items, veto_compra, veto_venta
