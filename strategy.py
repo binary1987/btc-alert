@@ -40,10 +40,10 @@ compra; un pico al alza (mucha compra) como posible euforia -> venta.
 VETO DE CONTEXTO: con 22 condiciones, algunas de bajo peso pueden alinearse
 por casualidad y activar una zona que contradice lo que dicen los
 indicadores mas fiables (RSI diario y Fear & Greed). Para evitarlo:
-  - Zona de COMPRA se BLOQUEA si RSI diario >= 60 Y F&G >= 60 a la vez
-    (mercado caro + codicia, contradice comprar).
-  - Zona de VENTA se BLOQUEA si RSI diario <= 40 Y F&G <= 40 a la vez
-    (mercado barato + miedo, contradice vender).
+  - Zona de COMPRA se BLOQUEA si RSI diario >= 60 O F&G >= 60 (basta con
+    que uno solo de los dos indique mercado caro/codicioso).
+  - Zona de VENTA se BLOQUEA si RSI diario <= 40 O F&G <= 40 (basta con
+    que uno solo de los dos indique mercado barato/con miedo).
 El veto no altera el conteo de condiciones (compra_conditions_met /
 venta_conditions_met), solo se devuelve aparte para que quien reciba el
 resultado decida no avisar, aunque el nivel siga contando internamente.
@@ -273,12 +273,13 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     compra_conditions_met = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_conditions_met = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
 
-    # Veto de contexto: bloquea el aviso si los indicadores mas fiables
-    # (RSI diario + F&G) contradicen abiertamente la zona activada.
-    veto_compra = bool(rsi_daily is not None and fng_value is not None
-                        and rsi_daily >= 60 and fng_value >= 60)
-    veto_venta = bool(rsi_daily is not None and fng_value is not None
-                       and rsi_daily <= 40 and fng_value <= 40)
+    # Veto de contexto: bloquea el aviso si CUALQUIERA de los dos
+    # indicadores mas fiables (RSI diario o F&G) contradice la zona
+    # activada, no hace falta que los dos a la vez.
+    veto_compra = bool((rsi_daily is not None and rsi_daily >= 60)
+                        or (fng_value is not None and fng_value >= 60))
+    veto_venta = bool((rsi_daily is not None and rsi_daily <= 40)
+                       or (fng_value is not None and fng_value <= 40))
 
     signal = None
     if compra_conditions_met >= required and not veto_compra:
