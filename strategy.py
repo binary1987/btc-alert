@@ -2,36 +2,24 @@
 """
 Estrategia estricta de compra/venta.
 
-Orden fijo de importancia (de mas a menos determinante):
-  1. Distancia al STH Realized Price
-  2. SMA200 diario
-  3. RSI semanal
-  4. MACD linea vs cero
-  5. Fear & Greed
-  6. SMA50 semanal
-  7. RSI diario
-  8. MACD histograma perdiendo fuerza
-  9. Divergencia diaria (RSI)
-  10. Divergencia semanal (RSI)
-  11. Divergencia SMA200 diario
-  12. Divergencia SMA50 semanal
-  13. Divergencia STH Realized Price
-  14. Bollinger diario (tocando banda superior/inferior)
-  15. Bollinger semanal (tocando banda superior/inferior)
-  16. SMA200 semanal (fuente: Twelve Data, histórico mayor a 365 días)
-  17. Divergencia SMA200 semanal
-  18. RSI diario y semanal combinados (ambos en la misma zona extrema a la vez)
-  19. MACD línea semanal vs cero
-  20. MACD histograma semanal perdiendo fuerza
-  21. Pico de volumen diario (>=2.5x la media de 30 dias)
-  22. Pico de volumen semanal (>=1.8x la media de 12 semanas)
+Las condiciones se muestran agrupadas por familia de indicador (para que el
+mensaje sea facil de leer), no por orden de importancia. El peso de cada una
+sigue siendo el mismo: todas puntuan 0 o 1 por igual.
 
-Todas las condiciones puntuan 0 o 1 (cumple / no cumple).
-La "fuerza" de una señal de distancia (STH/SMA200/SMA50) ya no se mide con
-un segundo umbral de porcentaje: se mide con su condicion de divergencia
-correspondiente, que es independiente del umbral de %. Esto evita el problema
-de que los picos tardios de un ciclo tengan % menores aunque el precio sea
-mas extremo (rendimientos decrecientes).
+Orden de familias en el mensaje:
+  1. STH Realized Price (2): distancia + divergencia
+  2. SMA (6): SMA200 diario, SMA50 semanal, SMA200 semanal + sus 3 divergencias
+  3. RSI (5): RSI diario, RSI semanal + sus 2 divergencias + combo diario+semanal
+  4. MACD (4): linea diario, histograma diario, linea semanal, histograma semanal
+  5. Fear & Greed (1)
+  6. Bollinger (2): diario + semanal
+  7. Volumen (2): pico diario + pico semanal
+
+La "fuerza" de una señal de distancia (STH/SMA200/SMA50/SMA200 semanal) ya no
+se mide con un segundo umbral de porcentaje: se mide con su condicion de
+divergencia correspondiente, que es independiente del umbral de %. Esto evita
+el problema de que los picos tardios de un ciclo tengan % menores aunque el
+precio sea mas extremo (rendimientos decrecientes).
 
 Los picos de volumen siguen la misma logica "contraria" que el resto: un
 pico a la baja (mucha venta) se interpreta como posible capitulacion ->
@@ -89,7 +77,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
                             daily_volumes=None, weekly_volumes=None,
                             required=5):
     """
-    Evalua las condiciones de COMPRA y de VENTA, en el orden fijo acordado.
+    Evalua las condiciones de COMPRA y de VENTA, agrupadas por familia.
 
     sma200w_pct: distancia % del precio actual a la SMA200 SEMANAL, ya
     calculada fuera de esta funcion (necesita un historico de precios de
@@ -221,51 +209,65 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     boll_weekly_venta = 1 if boll_weekly_sig == "sobrecompra" else 0
 
     compra_items = [
+        # --- STH Realized Price ---
         ("Distancia a STH Realized Price menor o igual a -10%", sth_compra, sth_pct_diff, "%"),
-        ("SMA200 diario menor o igual a -25%", sma200_compra, sma200_pct, "%"),
-        ("RSI semanal menor o igual a 40", rsi_weekly_compra, rsi_weekly, ""),
-        ("MACD línea diario menor que 0", macd_line_compra, None, None),
-        ("F&G menor o igual a 46", fng_compra, fng_value, ""),
-        ("SMA50 semanal menor o igual a -20%", sma50_compra, sma50w_pct, "%"),
-        ("RSI diario menor o igual a 25", rsi_daily_compra, rsi_daily, ""),
-        ("MACD histograma diario rojo perdiendo fuerza", macd_hist_compra, None, None),
-        ("Divergencia RSI diario alcista", div_daily_compra, None, None),
-        ("Divergencia RSI semanal alcista", div_weekly_compra, None, None),
-        ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None),
-        ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None),
         ("Divergencia STH Realized Price alcista", div_sth_compra, None, None),
-        ("Bollinger diario tocando banda inferior", boll_compra, None, None),
-        ("Bollinger semanal tocando banda inferior", boll_weekly_compra, None, None),
+        # --- SMA ---
+        ("SMA200 diario menor o igual a -25%", sma200_compra, sma200_pct, "%"),
+        ("Divergencia SMA200 diario alcista", div_sma200_compra, None, None),
+        ("SMA50 semanal menor o igual a -20%", sma50_compra, sma50w_pct, "%"),
+        ("Divergencia SMA50 semanal alcista", div_sma50w_compra, None, None),
         ("SMA200 semanal menor o igual a -5%", sma200w_compra, sma200w_pct, "%"),
         ("Divergencia SMA200 semanal alcista", div_sma200w_compra, None, None),
+        # --- RSI ---
+        ("RSI diario menor o igual a 25", rsi_daily_compra, rsi_daily, ""),
+        ("RSI semanal menor o igual a 40", rsi_weekly_compra, rsi_weekly, ""),
+        ("Divergencia RSI diario alcista", div_daily_compra, None, None),
+        ("Divergencia RSI semanal alcista", div_weekly_compra, None, None),
         ("RSI diario y semanal combinados en sobreventa", rsi_combo_compra, None, None),
+        # --- MACD ---
+        ("MACD línea diario menor que 0", macd_line_compra, None, None),
+        ("MACD histograma diario rojo perdiendo fuerza", macd_hist_compra, None, None),
         ("MACD línea semanal menor que 0", macd_line_weekly_compra, None, None),
         ("MACD histograma semanal rojo perdiendo fuerza", macd_hist_weekly_compra, None, None),
+        # --- Fear & Greed ---
+        ("F&G menor o igual a 46", fng_compra, fng_value, ""),
+        # --- Bollinger ---
+        ("Bollinger diario tocando banda inferior", boll_compra, None, None),
+        ("Bollinger semanal tocando banda inferior", boll_weekly_compra, None, None),
+        # --- Volumen ---
         ("Pico de volumen diario a la baja (posible capitulación)", vol_daily_compra, None, None),
         ("Pico de volumen semanal a la baja (posible capitulación)", vol_weekly_compra, None, None),
     ]
 
     venta_items = [
+        # --- STH Realized Price ---
         ("Distancia a STH Realized Price mayor o igual a +30%", sth_venta, sth_pct_diff, "%"),
-        ("SMA200 diario mayor o igual a 45%", sma200_venta, sma200_pct, "%"),
-        ("RSI semanal mayor o igual a 60", rsi_weekly_venta, rsi_weekly, ""),
-        ("MACD línea diario mayor que 0", macd_line_venta, None, None),
-        ("F&G mayor o igual a 55", fng_venta, fng_value, ""),
-        ("SMA50 semanal mayor o igual a 60%", sma50_venta, sma50w_pct, "%"),
-        ("RSI diario mayor o igual a 75", rsi_daily_venta, rsi_daily, ""),
-        ("MACD histograma diario verde perdiendo fuerza", macd_hist_venta, None, None),
-        ("Divergencia RSI diario bajista", div_daily_venta, None, None),
-        ("Divergencia RSI semanal bajista", div_weekly_venta, None, None),
-        ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None),
-        ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None),
         ("Divergencia STH Realized Price bajista", div_sth_venta, None, None),
-        ("Bollinger diario tocando banda superior", boll_venta, None, None),
-        ("Bollinger semanal tocando banda superior", boll_weekly_venta, None, None),
+        # --- SMA ---
+        ("SMA200 diario mayor o igual a 45%", sma200_venta, sma200_pct, "%"),
+        ("Divergencia SMA200 diario bajista", div_sma200_venta, None, None),
+        ("SMA50 semanal mayor o igual a 60%", sma50_venta, sma50w_pct, "%"),
+        ("Divergencia SMA50 semanal bajista", div_sma50w_venta, None, None),
         ("SMA200 semanal mayor o igual a 100%", sma200w_venta, sma200w_pct, "%"),
         ("Divergencia SMA200 semanal bajista", div_sma200w_venta, None, None),
+        # --- RSI ---
+        ("RSI diario mayor o igual a 75", rsi_daily_venta, rsi_daily, ""),
+        ("RSI semanal mayor o igual a 60", rsi_weekly_venta, rsi_weekly, ""),
+        ("Divergencia RSI diario bajista", div_daily_venta, None, None),
+        ("Divergencia RSI semanal bajista", div_weekly_venta, None, None),
         ("RSI diario y semanal combinados en sobrecompra", rsi_combo_venta, None, None),
+        # --- MACD ---
+        ("MACD línea diario mayor que 0", macd_line_venta, None, None),
+        ("MACD histograma diario verde perdiendo fuerza", macd_hist_venta, None, None),
         ("MACD línea semanal mayor que 0", macd_line_weekly_venta, None, None),
         ("MACD histograma semanal verde perdiendo fuerza", macd_hist_weekly_venta, None, None),
+        # --- Fear & Greed ---
+        ("F&G mayor o igual a 55", fng_venta, fng_value, ""),
+        # --- Bollinger ---
+        ("Bollinger diario tocando banda superior", boll_venta, None, None),
+        ("Bollinger semanal tocando banda superior", boll_weekly_venta, None, None),
+        # --- Volumen ---
         ("Pico de volumen diario al alza (posible euforia)", vol_daily_venta, None, None),
         ("Pico de volumen semanal al alza (posible euforia)", vol_weekly_venta, None, None),
     ]
