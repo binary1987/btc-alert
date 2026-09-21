@@ -56,8 +56,22 @@ def send_telegram(msg):
     urllib.request.urlopen(url, data=data, timeout=10)
 
 
+def format_condition_line(check, text, value, unit):
+    line = f"{check} {text}"
+    if value is not None:
+        if unit == "%":
+            line += f": {value:+.0f}%"
+        else:
+            line += f": {value:.0f}"
+    return line
+
+
 def build_message(direction, items):
-    """Mensaje completo con las condiciones, usado cuando el nivel SUBE."""
+    """
+    Mensaje completo con las condiciones, usado cuando el nivel SUBE.
+    Separa las condiciones en dos bloques: activas primero, no activas
+    despues, en vez de intercalarlas en el orden fijo de la lista.
+    """
     conditions_met = sum(1 for _, pts, _, _ in items if pts >= 1)
     total_conditions = len(items)
 
@@ -65,21 +79,30 @@ def build_message(direction, items):
     label = "ZONA DE COMPRA" if direction == "COMPRA" else "ZONA DE VENTA"
     estrellas = "⭐️" * conditions_met
 
+    active = [(text, value, unit) for text, pts, value, unit in items if pts >= 1]
+    inactive = [(text, value, unit) for text, pts, value, unit in items if pts < 1]
+
     lines = [
         f"🔔{emoji} {label} {estrellas}",
         f"Condiciones cumplidas: {conditions_met}/{total_conditions}",
         "",
+        "✅ Activas:",
     ]
 
-    for text, pts, value, unit in items:
-        check = "✅" if pts >= 1 else "❌"
-        line = f"{check} {text}"
-        if value is not None:
-            if unit == "%":
-                line += f": {value:+.0f}%"
-            else:
-                line += f": {value:.0f}"
-        lines.append(line)
+    if active:
+        for text, value, unit in active:
+            lines.append(format_condition_line("✅", text, value, unit))
+    else:
+        lines.append("(ninguna)")
+
+    lines.append("")
+    lines.append("❌ No activas:")
+
+    if inactive:
+        for text, value, unit in inactive:
+            lines.append(format_condition_line("❌", text, value, unit))
+    else:
+        lines.append("(ninguna)")
 
     return "\n".join(lines)
 
