@@ -1,1 +1,1 @@
-{"tier_compra": 0, "tier_venta": 6, "active_compra": [], "active_venta": ["RSI semanal mayor o igual a 60", "MACD l\u00ednea diario mayor que 0", "MACD l\u00ednea semanal mayor que 0", "F&G mayor o igual a 55", "Bollinger diario tocando banda superior", "Bollinger semanal tocando banda superior"]}
+{"tier_compra": 0, "tier_venta": 5, "active_compra": [], "active_venta": ["RSI semanal mayor o igual a 60", "MACD l\u00ednea diario mayor que 0", "MACD l\u00ednea semanal mayor que 0", "F&G mayor o igual a 55", "Bollinger diario tocando banda superior"]}
