@@ -20,6 +20,7 @@ WEEKLY_RANGE_STATE_FILE = "weekly_range_state.json"
 MONTHLY_RANGE_STATE_FILE = "monthly_range_state.json"
 WEEKLY_STREAK_STATE_FILE = "weekly_streak_state.json"
 MONTHLY_STREAK_STATE_FILE = "monthly_streak_state.json"
+WATCHED_LEVELS_FILE = "watched_levels_state.json"
 
 MESES_ES_ABR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 MESES_ES_FULL = [
@@ -241,6 +242,39 @@ def write_streak_state(path, up_streak, down_streak):
         json.dump(data, f)
 
 
+def read_watched_levels():
+    default = {"weekly_max": None, "weekly_min": None, "monthly_max": None, "monthly_min": None}
+    if not os.path.exists(WATCHED_LEVELS_FILE):
+        return default
+    try:
+        with open(WATCHED_LEVELS_FILE) as f:
+            content = f.read().strip()
+        if not content:
+            return default
+        data = json.loads(content)
+        for k in default:
+            data.setdefault(k, default[k])
+        return data
+    except (json.JSONDecodeError, ValueError):
+        return default
+
+
+def write_watched_levels(data):
+    with open(WATCHED_LEVELS_FILE, "w") as f:
+        json.dump(data, f)
+
+
+def set_watched_level(slot, value, label):
+    """
+    Marca un nuevo maximo/minimo relativo como "vigilado" (pendiente de
+    romperse). Si ya habia uno vigilado en ese mismo slot (mismo plano,
+    misma direccion), lo sustituye: el mas reciente es el relevante.
+    """
+    data = read_watched_levels()
+    data[slot] = {"value": value, "label": label, "alerted": False}
+    write_watched_levels(data)
+
+
 def week_key_to_label(week_key):
     """Convierte '2026-W38' en algo legible tipo '15-21 sep'."""
     year_str, week_str = week_key.split("-W")
@@ -294,7 +328,8 @@ def confirm_weekly_streak(just_closed_key, high, low, broke_up, broke_down):
 
     Si rompio, esa semana se añade a la racha correspondiente. Si no
     rompio, esa racha se corta: si tenia contenido previo, se avisa del
-    maximo/minimo relativo que deja esa racha cortada.
+    maximo/minimo relativo que deja esa racha cortada, y ese nivel queda
+    vigilado para avisar tambien cuando el precio lo rompa mas adelante.
     """
     state = read_streak_state(WEEKLY_STREAK_STATE_FILE)
     up_streak = state["up_streak"]
@@ -307,12 +342,14 @@ def confirm_weekly_streak(just_closed_key, high, low, broke_up, broke_down):
         if up_streak:
             peak = max(up_streak, key=lambda e: e["high"])
             n = len(up_streak)
+            label = f"semana {week_key_to_label(peak['key'])}"
             msg = "\n".join([
                 f"🔄 BTC pierde la racha alcista semanal ({n} semana{'s' if n != 1 else ''} consecutiva{'s' if n != 1 else ''})",
-                f"Máximo relativo dejado: {peak['high']:,.0f} $ (semana {week_key_to_label(peak['key'])})",
+                f"Máximo relativo dejado: {peak['high']:,.0f} $ ({label})",
             ])
             print("AVISO (fin racha alcista semanal):", msg)
             send_telegram(msg)
+            set_watched_level("weekly_max", peak["high"], label)
         up_streak = []
 
     if broke_down:
@@ -321,12 +358,14 @@ def confirm_weekly_streak(just_closed_key, high, low, broke_up, broke_down):
         if down_streak:
             trough = min(down_streak, key=lambda e: e["low"])
             n = len(down_streak)
+            label = f"semana {week_key_to_label(trough['key'])}"
             msg = "\n".join([
                 f"🔄 BTC pierde la racha bajista semanal ({n} semana{'s' if n != 1 else ''} consecutiva{'s' if n != 1 else ''})",
-                f"Mínimo relativo dejado: {trough['low']:,.0f} $ (semana {week_key_to_label(trough['key'])})",
+                f"Mínimo relativo dejado: {trough['low']:,.0f} $ ({label})",
             ])
             print("AVISO (fin racha bajista semanal):", msg)
             send_telegram(msg)
+            set_watched_level("weekly_min", trough["low"], label)
         down_streak = []
 
     write_streak_state(WEEKLY_STREAK_STATE_FILE, up_streak, down_streak)
@@ -345,12 +384,14 @@ def confirm_monthly_streak(just_closed_key, high, low, broke_up, broke_down):
         if up_streak:
             peak = max(up_streak, key=lambda e: e["high"])
             n = len(up_streak)
+            label = month_key_to_label(peak["key"])
             msg = "\n".join([
                 f"🔄 BTC pierde la racha alcista mensual ({n} mes{'es' if n != 1 else ''} consecutivo{'s' if n != 1 else ''})",
-                f"Máximo relativo dejado: {peak['high']:,.0f} $ ({month_key_to_label(peak['key'])})",
+                f"Máximo relativo dejado: {peak['high']:,.0f} $ ({label})",
             ])
             print("AVISO (fin racha alcista mensual):", msg)
             send_telegram(msg)
+            set_watched_level("monthly_max", peak["high"], label)
         up_streak = []
 
     if broke_down:
@@ -359,15 +400,63 @@ def confirm_monthly_streak(just_closed_key, high, low, broke_up, broke_down):
         if down_streak:
             trough = min(down_streak, key=lambda e: e["low"])
             n = len(down_streak)
+            label = month_key_to_label(trough["key"])
             msg = "\n".join([
                 f"🔄 BTC pierde la racha bajista mensual ({n} mes{'es' if n != 1 else ''} consecutivo{'s' if n != 1 else ''})",
-                f"Mínimo relativo dejado: {trough['low']:,.0f} $ ({month_key_to_label(trough['key'])})",
+                f"Mínimo relativo dejado: {trough['low']:,.0f} $ ({label})",
             ])
             print("AVISO (fin racha bajista mensual):", msg)
             send_telegram(msg)
+            set_watched_level("monthly_min", trough["low"], label)
         down_streak = []
 
     write_streak_state(MONTHLY_STREAK_STATE_FILE, up_streak, down_streak)
+
+
+def build_relative_level_message(slot, current_price, level):
+    value = level["value"]
+    label = level["label"]
+    pct = ((current_price - value) / value) * 100 if value else 0
+    scope_word = "SEMANAL" if slot.startswith("weekly") else "MENSUAL"
+
+    if slot.endswith("_max"):
+        return "\n".join([
+            f"🔔📈 BTC ROMPE MÁXIMO RELATIVO {scope_word} ANTERIOR",
+            f"Precio actual: {current_price:,.0f} $",
+            f"Máximo relativo ({label}): {value:,.0f} $ ({pct:+.1f}%)",
+        ])
+    return "\n".join([
+        f"🔔📉 BTC ROMPE MÍNIMO RELATIVO {scope_word} ANTERIOR",
+        f"Precio actual: {current_price:,.0f} $",
+        f"Mínimo relativo ({label}): {value:,.0f} $ ({pct:+.1f}%)",
+    ])
+
+
+def check_relative_levels(current_price):
+    """
+    Comprueba cada hora si el precio actual ha roto alguno de los
+    maximos/minimos relativos que quedaron marcados al cortarse una racha
+    (semanal o mensual). En cuanto se rompe, avisa y deja de vigilar ese
+    nivel (ya cumplió su función).
+    """
+    data = read_watched_levels()
+    changed = False
+
+    for slot in ("weekly_max", "weekly_min", "monthly_max", "monthly_min"):
+        level = data.get(slot)
+        if not level or level.get("alerted"):
+            continue
+
+        broke = current_price > level["value"] if slot.endswith("_max") else current_price < level["value"]
+        if broke:
+            msg = build_relative_level_message(slot, current_price, level)
+            print(f"AVISO (nivel relativo roto, {slot}):", msg)
+            send_telegram(msg)
+            data[slot] = None
+            changed = True
+
+    if changed:
+        write_watched_levels(data)
 
 
 def build_breakout_message(direction, current_price, ref_price, ref_key, scope):
@@ -509,6 +598,7 @@ def main():
 
     check_weekly_breakout(daily_closes[-1])
     check_monthly_breakout(daily_closes[-1])
+    check_relative_levels(daily_closes[-1])
 
     fng_value, _ = get_fear_greed()
 
