@@ -6,7 +6,7 @@ import math
 import time
 import urllib.request
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 MARKET_CHART_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
 MARKET_CHART_RANGE_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
@@ -118,6 +118,82 @@ def get_sma200_weekly_data(current_price):
     div_sma200w = detect_sma_divergence(weekly_closes_td, period=200, order=2, min_distance=3)
 
     return sma200w_pct, div_sma200w
+
+
+def get_btc_daily_ohlc_twelvedata(outputsize=14, retries=3, retry_delay=10):
+    """
+    Historico diario de BTC/USD (high/low real intradiario, no solo cierre)
+    via Twelve Data. Se usa para calcular el maximo y minimo REAL de la
+    semana natural pasada, algo que CoinGecko con days=365 no puede dar
+    porque solo entrega un precio de cierre por dia. Devuelve una lista de
+    (fecha_str 'YYYY-MM-DD', high, low) en orden cronologico (ascendente).
+    """
+    api_key = os.environ.get("TWELVEDATA_API_KEY")
+    params = urllib.parse.urlencode({
+        "symbol": "BTC/USD",
+        "interval": "1day",
+        "outputsize": outputsize,
+        "order": "ASC",
+        "apikey": api_key,
+    })
+    url = f"https://api.twelvedata.com/time_series?{params}"
+
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            if "values" not in data:
+                raise ValueError(f"respuesta sin 'values': {data}")
+            result = [(v["datetime"], float(v["high"]), float(v["low"])) for v in data["values"]]
+            result.sort(key=lambda x: x[0])
+            return result
+        except Exception as e:
+            last_error = e
+            print(f"Aviso: fallo al pedir OHLC diario de Twelve Data (intento {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    print(f"Aviso: no se pudo obtener el OHLC diario de Twelve Data tras {retries} intentos ({last_error})")
+    return []
+
+
+def compute_last_closed_week_range(ohlc):
+    """
+    Dado un listado de (fecha_str 'YYYY-MM-DD', high, low), calcula el
+    maximo y minimo REAL (no de cierre) de la ultima semana natural
+    (lunes-domingo) ya cerrada respecto a hoy.
+
+    Devuelve (week_key, high, low). Si no hay datos suficientes para esa
+    semana concreta, devuelve (week_key, None, None) con el week_key ya
+    calculado (para poder guardar el estado igualmente y no reintentar
+    cada hora).
+    """
+    today = datetime.now(timezone.utc).date()
+    current_year, current_week, _ = today.isocalendar()
+
+    last_monday_this_week = datetime.fromisocalendar(current_year, current_week, 1).date()
+    last_closed_week_end = last_monday_this_week - timedelta(days=1)  # domingo pasado
+    last_closed_year, last_closed_week, _ = last_closed_week_end.isocalendar()
+    week_key = f"{last_closed_year}-W{last_closed_week:02d}"
+
+    if not ohlc:
+        return week_key, None, None
+
+    highs = []
+    lows = []
+    for date_str, high, low in ohlc:
+        d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+        y, w, _ = d.isocalendar()
+        if y == last_closed_year and w == last_closed_week:
+            highs.append(high)
+            lows.append(low)
+
+    if not highs or not lows:
+        return week_key, None, None
+
+    return week_key, max(highs), min(lows)
 
 
 def get_ath():
