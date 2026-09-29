@@ -18,6 +18,14 @@ MIN_TIER_TO_NOTIFY = 3  # a partir de 3 condiciones activas empezamos a avisar
 
 WEEKLY_RANGE_STATE_FILE = "weekly_range_state.json"
 MONTHLY_RANGE_STATE_FILE = "monthly_range_state.json"
+WEEKLY_STREAK_STATE_FILE = "weekly_streak_state.json"
+MONTHLY_STREAK_STATE_FILE = "monthly_streak_state.json"
+
+MESES_ES_ABR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+MESES_ES_FULL = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
 
 
 def read_last_state():
@@ -210,18 +218,191 @@ def write_range_state(path, key, high, low, alerted_up, alerted_down):
         json.dump(data, f)
 
 
-def build_breakout_message(direction, current_price, ref_price, ref_key, scope_label):
+def read_streak_state(path):
+    default = {"up_streak": [], "down_streak": []}
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path) as f:
+            content = f.read().strip()
+        if not content:
+            return default
+        data = json.loads(content)
+        for k in default:
+            data.setdefault(k, default[k])
+        return data
+    except (json.JSONDecodeError, ValueError):
+        return default
+
+
+def write_streak_state(path, up_streak, down_streak):
+    data = {"up_streak": up_streak, "down_streak": down_streak}
+    with open(path, "w") as f:
+        json.dump(data, f)
+
+
+def week_key_to_label(week_key):
+    """Convierte '2026-W38' en algo legible tipo '15-21 sep'."""
+    year_str, week_str = week_key.split("-W")
+    year, week = int(year_str), int(week_str)
+    monday = datetime.fromisocalendar(year, week, 1).date()
+    sunday = monday + timedelta(days=6)
+    if monday.month == sunday.month:
+        return f"{monday.day}-{sunday.day} {MESES_ES_ABR[monday.month - 1]}"
+    return f"{monday.day} {MESES_ES_ABR[monday.month - 1]} - {sunday.day} {MESES_ES_ABR[sunday.month - 1]}"
+
+
+def month_key_to_label(month_key):
+    """Convierte '2026-08' en 'agosto'."""
+    _, month_str = month_key.split("-")
+    return MESES_ES_FULL[int(month_str) - 1]
+
+
+def describe_weekly_streak(direction):
+    """
+    Describe el estado ACTUAL (ya confirmado, sin contar la semana en
+    curso) de la racha semanal en una direccion ('up' o 'down').
+    """
+    state = read_streak_state(WEEKLY_STREAK_STATE_FILE)
+    entries = state["up_streak"] if direction == "up" else state["down_streak"]
+    n = len(entries)
+    word = "máximos" if direction == "up" else "mínimos"
+    if n == 0:
+        return f"sin ruptura de {word} la última semana cerrada"
+    labels = ", ".join(week_key_to_label(e["key"]) for e in entries)
+    return f"{n} semana{'s' if n != 1 else ''} consecutiva{'s' if n != 1 else ''} rompiendo {word} ({labels})"
+
+
+def describe_monthly_streak(direction):
+    """Igual que describe_weekly_streak pero para el plano mensual."""
+    state = read_streak_state(MONTHLY_STREAK_STATE_FILE)
+    entries = state["up_streak"] if direction == "up" else state["down_streak"]
+    n = len(entries)
+    word = "máximos" if direction == "up" else "mínimos"
+    if n == 0:
+        return f"sin ruptura de {word} el último mes cerrado"
+    labels = ", ".join(month_key_to_label(e["key"]) for e in entries)
+    return f"{n} mes{'es' if n != 1 else ''} consecutivo{'s' if n != 1 else ''} rompiendo {word} ({labels})"
+
+
+def confirm_weekly_streak(just_closed_key, high, low, broke_up, broke_down):
+    """
+    Se llama justo cuando una semana termina de cerrarse (detectado en el
+    siguiente chequeo horario). broke_up/broke_down son los flags de esa
+    semana ya cerrada: si en algun momento de esa semana el precio rompio
+    el maximo/minimo de la semana anterior a ella.
+
+    Si rompio, esa semana se añade a la racha correspondiente. Si no
+    rompio, esa racha se corta: si tenia contenido previo, se avisa del
+    maximo/minimo relativo que deja esa racha cortada.
+    """
+    state = read_streak_state(WEEKLY_STREAK_STATE_FILE)
+    up_streak = state["up_streak"]
+    down_streak = state["down_streak"]
+    entry = {"key": just_closed_key, "high": high, "low": low}
+
+    if broke_up:
+        up_streak.append(entry)
+    else:
+        if up_streak:
+            peak = max(up_streak, key=lambda e: e["high"])
+            n = len(up_streak)
+            msg = "\n".join([
+                f"🔄 BTC pierde la racha alcista semanal ({n} semana{'s' if n != 1 else ''} consecutiva{'s' if n != 1 else ''})",
+                f"Máximo relativo dejado: {peak['high']:,.0f} $ (semana {week_key_to_label(peak['key'])})",
+            ])
+            print("AVISO (fin racha alcista semanal):", msg)
+            send_telegram(msg)
+        up_streak = []
+
+    if broke_down:
+        down_streak.append(entry)
+    else:
+        if down_streak:
+            trough = min(down_streak, key=lambda e: e["low"])
+            n = len(down_streak)
+            msg = "\n".join([
+                f"🔄 BTC pierde la racha bajista semanal ({n} semana{'s' if n != 1 else ''} consecutiva{'s' if n != 1 else ''})",
+                f"Mínimo relativo dejado: {trough['low']:,.0f} $ (semana {week_key_to_label(trough['key'])})",
+            ])
+            print("AVISO (fin racha bajista semanal):", msg)
+            send_telegram(msg)
+        down_streak = []
+
+    write_streak_state(WEEKLY_STREAK_STATE_FILE, up_streak, down_streak)
+
+
+def confirm_monthly_streak(just_closed_key, high, low, broke_up, broke_down):
+    """Igual que confirm_weekly_streak pero para el plano mensual."""
+    state = read_streak_state(MONTHLY_STREAK_STATE_FILE)
+    up_streak = state["up_streak"]
+    down_streak = state["down_streak"]
+    entry = {"key": just_closed_key, "high": high, "low": low}
+
+    if broke_up:
+        up_streak.append(entry)
+    else:
+        if up_streak:
+            peak = max(up_streak, key=lambda e: e["high"])
+            n = len(up_streak)
+            msg = "\n".join([
+                f"🔄 BTC pierde la racha alcista mensual ({n} mes{'es' if n != 1 else ''} consecutivo{'s' if n != 1 else ''})",
+                f"Máximo relativo dejado: {peak['high']:,.0f} $ ({month_key_to_label(peak['key'])})",
+            ])
+            print("AVISO (fin racha alcista mensual):", msg)
+            send_telegram(msg)
+        up_streak = []
+
+    if broke_down:
+        down_streak.append(entry)
+    else:
+        if down_streak:
+            trough = min(down_streak, key=lambda e: e["low"])
+            n = len(down_streak)
+            msg = "\n".join([
+                f"🔄 BTC pierde la racha bajista mensual ({n} mes{'es' if n != 1 else ''} consecutivo{'s' if n != 1 else ''})",
+                f"Mínimo relativo dejado: {trough['low']:,.0f} $ ({month_key_to_label(trough['key'])})",
+            ])
+            print("AVISO (fin racha bajista mensual):", msg)
+            send_telegram(msg)
+        down_streak = []
+
+    write_streak_state(MONTHLY_STREAK_STATE_FILE, up_streak, down_streak)
+
+
+def build_breakout_message(direction, current_price, ref_price, ref_key, scope):
+    """
+    direction: 'up' o 'down'. scope: 'weekly' o 'monthly'.
+    Incluye la racha propia del plano (confirmada, sin contar el periodo en
+    curso) y el contexto del otro plano temporal.
+    """
     pct = ((current_price - ref_price) / ref_price) * 100 if ref_price else 0
-    if direction == "up":
-        return "\n".join([
-            f"🔔📈 BTC ROMPE MÁXIMO {scope_label}",
-            f"Precio actual: {current_price:,.0f} $",
-            f"Máximo {ref_key}: {ref_price:,.0f} $ ({pct:+.1f}%)",
-        ])
+    title = "MÁXIMO" if direction == "up" else "MÍNIMO"
+    emoji = "📈" if direction == "up" else "📉"
+    word = "Máximo" if direction == "up" else "Mínimo"
+
+    if scope == "weekly":
+        scope_word = "SEMANAL"
+        ref_label = f"semana anterior ({week_key_to_label(ref_key)})"
+        own_streak = describe_weekly_streak(direction)
+        cross_streak = describe_monthly_streak(direction)
+        own_label = "Racha semanal"
+        cross_label = "Contexto mensual"
+    else:
+        scope_word = "MENSUAL"
+        ref_label = f"mes anterior ({month_key_to_label(ref_key)})"
+        own_streak = describe_monthly_streak(direction)
+        cross_streak = describe_weekly_streak(direction)
+        own_label = "Racha mensual"
+        cross_label = "Contexto semanal"
+
     return "\n".join([
-        f"🔔📉 BTC ROMPE MÍNIMO {scope_label}",
+        f"🔔{emoji} BTC ROMPE {title} {scope_word}",
         f"Precio actual: {current_price:,.0f} $",
-        f"Mínimo {ref_key}: {ref_price:,.0f} $ ({pct:+.1f}%)",
+        f"{word} {ref_label}: {ref_price:,.0f} $ ({pct:+.1f}%)",
+        f"📊 {own_label}: {own_streak}",
+        "",
+        f"📅 {cross_label}: {cross_streak}",
     ])
 
 
@@ -232,9 +413,10 @@ def check_weekly_breakout(current_price):
     natural ya cerrada (lunes-domingo).
 
     Solo pide datos nuevos a Twelve Data cuando detecta que ha entrado una
-    semana nueva (una vez por semana); el resto de las horas compara el
-    precio actual contra el high/low ya cacheado en disco. Avisa una unica
-    vez por ruptura.
+    semana nueva (una vez por semana). En ese mismo instante confirma la
+    racha de la semana que acaba de cerrarse (usando los flags acumulados
+    durante esa semana) y, si corresponde, avisa del extremo relativo que
+    deja una racha que se corta.
     """
     state = read_range_state(WEEKLY_RANGE_STATE_FILE)
 
@@ -247,26 +429,30 @@ def check_weekly_breakout(current_price):
 
     if state["key"] != last_closed_key:
         ohlc = get_btc_daily_ohlc_twelvedata(outputsize=14)
-        key, high, low = compute_last_closed_week_range(ohlc)
-        if key is None or high is None or low is None:
+        new_key, new_high, new_low = compute_last_closed_week_range(ohlc)
+        if new_key is None or new_high is None or new_low is None:
             print("Aviso: no se pudo calcular el rango real de la semana pasada, se omite la comprobación semanal esta hora")
             return
-        state = {"key": key, "high": high, "low": low, "alerted_up": False, "alerted_down": False}
+
+        if state["key"] is not None:
+            confirm_weekly_streak(new_key, new_high, new_low, state["alerted_up"], state["alerted_down"])
+
+        state = {"key": new_key, "high": new_high, "low": new_low, "alerted_up": False, "alerted_down": False}
         write_range_state(WEEKLY_RANGE_STATE_FILE, **state)
-        print(f"Rango real semana pasada ({key}) actualizado: high={high:.0f}, low={low:.0f}")
+        print(f"Rango real semana pasada ({new_key}) actualizado: high={new_high:.0f}, low={new_low:.0f}")
 
     high, low, key = state["high"], state["low"], state["key"]
     if high is None or low is None:
         return
 
     if current_price > high and not state["alerted_up"]:
-        msg = build_breakout_message("up", current_price, high, f"semana anterior ({key})", "SEMANAL")
+        msg = build_breakout_message("up", current_price, high, key, "weekly")
         print("AVISO (ruptura semanal, máximo):", msg)
         send_telegram(msg)
         state["alerted_up"] = True
         write_range_state(WEEKLY_RANGE_STATE_FILE, **state)
     elif current_price < low and not state["alerted_down"]:
-        msg = build_breakout_message("down", current_price, low, f"semana anterior ({key})", "SEMANAL")
+        msg = build_breakout_message("down", current_price, low, key, "weekly")
         print("AVISO (ruptura semanal, mínimo):", msg)
         send_telegram(msg)
         state["alerted_down"] = True
@@ -274,12 +460,7 @@ def check_weekly_breakout(current_price):
 
 
 def check_monthly_breakout(current_price):
-    """
-    Igual que check_weekly_breakout pero con el mes natural ya cerrado.
-    Solo pide datos nuevos a Twelve Data cuando detecta que ha entrado un
-    mes nuevo (una vez al mes); el resto de las horas compara contra el
-    high/low cacheado. Avisa una unica vez por ruptura.
-    """
+    """Igual que check_weekly_breakout pero con el mes natural ya cerrado."""
     state = read_range_state(MONTHLY_RANGE_STATE_FILE)
 
     today = datetime.now(timezone.utc).date()
@@ -289,26 +470,30 @@ def check_monthly_breakout(current_price):
 
     if state["key"] != last_closed_key:
         ohlc = get_btc_daily_ohlc_twelvedata(outputsize=45)
-        key, high, low = compute_last_closed_month_range(ohlc)
-        if key is None or high is None or low is None:
+        new_key, new_high, new_low = compute_last_closed_month_range(ohlc)
+        if new_key is None or new_high is None or new_low is None:
             print("Aviso: no se pudo calcular el rango real del mes pasado, se omite la comprobación mensual esta hora")
             return
-        state = {"key": key, "high": high, "low": low, "alerted_up": False, "alerted_down": False}
+
+        if state["key"] is not None:
+            confirm_monthly_streak(new_key, new_high, new_low, state["alerted_up"], state["alerted_down"])
+
+        state = {"key": new_key, "high": new_high, "low": new_low, "alerted_up": False, "alerted_down": False}
         write_range_state(MONTHLY_RANGE_STATE_FILE, **state)
-        print(f"Rango real mes pasado ({key}) actualizado: high={high:.0f}, low={low:.0f}")
+        print(f"Rango real mes pasado ({new_key}) actualizado: high={new_high:.0f}, low={new_low:.0f}")
 
     high, low, key = state["high"], state["low"], state["key"]
     if high is None or low is None:
         return
 
     if current_price > high and not state["alerted_up"]:
-        msg = build_breakout_message("up", current_price, high, f"mes anterior ({key})", "MENSUAL")
+        msg = build_breakout_message("up", current_price, high, key, "monthly")
         print("AVISO (ruptura mensual, máximo):", msg)
         send_telegram(msg)
         state["alerted_up"] = True
         write_range_state(MONTHLY_RANGE_STATE_FILE, **state)
     elif current_price < low and not state["alerted_down"]:
-        msg = build_breakout_message("down", current_price, low, f"mes anterior ({key})", "MENSUAL")
+        msg = build_breakout_message("down", current_price, low, key, "monthly")
         print("AVISO (ruptura mensual, mínimo):", msg)
         send_telegram(msg)
         state["alerted_down"] = True
