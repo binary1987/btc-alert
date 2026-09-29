@@ -124,9 +124,10 @@ def get_btc_daily_ohlc_twelvedata(outputsize=14, retries=3, retry_delay=10):
     """
     Historico diario de BTC/USD (high/low real intradiario, no solo cierre)
     via Twelve Data. Se usa para calcular el maximo y minimo REAL de la
-    semana natural pasada, algo que CoinGecko con days=365 no puede dar
-    porque solo entrega un precio de cierre por dia. Devuelve una lista de
-    (fecha_str 'YYYY-MM-DD', high, low) en orden cronologico (ascendente).
+    semana o el mes natural pasado, algo que CoinGecko con days=365 no
+    puede dar porque solo entrega un precio de cierre por dia. Devuelve una
+    lista de (fecha_str 'YYYY-MM-DD', high, low) en orden cronologico
+    (ascendente).
     """
     api_key = os.environ.get("TWELVEDATA_API_KEY")
     params = urllib.parse.urlencode({
@@ -194,6 +195,38 @@ def compute_last_closed_week_range(ohlc):
         return week_key, None, None
 
     return week_key, max(highs), min(lows)
+
+
+def compute_last_closed_month_range(ohlc):
+    """
+    Igual que compute_last_closed_week_range pero para el mes natural ya
+    cerrado. Dado un listado de (fecha_str 'YYYY-MM-DD', high, low),
+    calcula el maximo y minimo REAL (no de cierre) del mes calendario
+    anterior al actual.
+
+    Devuelve (month_key, high, low). Si no hay datos suficientes para ese
+    mes concreto, devuelve (month_key, None, None).
+    """
+    today = datetime.now(timezone.utc).date()
+    first_of_current_month = today.replace(day=1)
+    last_closed_month_end = first_of_current_month - timedelta(days=1)
+    month_key = last_closed_month_end.strftime("%Y-%m")
+
+    if not ohlc:
+        return month_key, None, None
+
+    highs = []
+    lows = []
+    for date_str, high, low in ohlc:
+        d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+        if d.year == last_closed_month_end.year and d.month == last_closed_month_end.month:
+            highs.append(high)
+            lows.append(low)
+
+    if not highs or not lows:
+        return month_key, None, None
+
+    return month_key, max(highs), min(lows)
 
 
 def get_ath():
