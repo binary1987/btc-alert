@@ -81,11 +81,12 @@ def format_condition_line(check, text, value, unit):
     return line
 
 
-def build_message(direction, items):
+def build_message(direction, items, last_active=None):
     """
     Mensaje completo con las condiciones, usado cuando el nivel SUBE.
-    Separa las condiciones en dos bloques: activas primero, no activas
-    despues, en vez de intercalarlas en el orden fijo de la lista.
+    Primero muestra que condicion(es) nueva(s) empezaron a cumplirse desde
+    el nivel anterior (comparando con last_active), y despues separa el
+    resto en dos bloques: activas y no activas.
     """
     conditions_met = sum(1 for _, pts, _, _ in items if pts >= 1)
     total_conditions = len(items)
@@ -97,12 +98,24 @@ def build_message(direction, items):
     active = [(text, value, unit) for text, pts, value, unit in items if pts >= 1]
     inactive = [(text, value, unit) for text, pts, value, unit in items if pts < 1]
 
+    last_active = last_active or []
+    new_active = [(text, value, unit) for text, value, unit in active if text not in last_active]
+
     lines = [
         f"🔔{emoji} {label} {estrellas}",
         f"Condiciones cumplidas: {conditions_met}/{total_conditions}",
         "",
-        "✅ Activas:",
+        "🆕 Empezó a cumplirse:",
     ]
+
+    if new_active:
+        for text, value, unit in new_active:
+            lines.append(format_condition_line("✅", text, value, unit))
+    else:
+        lines.append("(ninguna)")
+
+    lines.append("")
+    lines.append("✅ Activas:")
 
     if active:
         for text, value, unit in active:
@@ -168,7 +181,7 @@ def process_direction(direction, items, last_tier, last_active, veto=False):
         if veto:
             print(f"{direction}: nivel {current_tier} pero VETADO por contexto (RSI+F&G), no se avisa (subida)")
         else:
-            msg = build_message(direction, items)
+            msg = build_message(direction, items, last_active)
             print(f"AVISO ({direction}, sube):", msg)
             send_telegram(msg)
 
