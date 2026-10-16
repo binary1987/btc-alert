@@ -10,7 +10,7 @@ Orden de familias en el mensaje:
   1. STH Realized Price (2): distancia + divergencia
   2. SMA (6): SMA200 diario, SMA50 semanal, SMA200 semanal + sus 3 divergencias
   3. RSI (5): RSI diario, RSI semanal + sus 2 divergencias + combo diario+semanal
-  4. MACD (4): linea diario, histograma diario, linea semanal, histograma semanal
+  4. MACD (2): histograma diario, histograma semanal
   5. Fear & Greed (1)
   6. Bollinger (2): diario + semanal
   7. Volumen (2): pico diario + pico semanal
@@ -25,7 +25,7 @@ Los picos de volumen siguen la misma logica "contraria" que el resto: un
 pico a la baja (mucha venta) se interpreta como posible capitulacion ->
 compra; un pico al alza (mucha compra) como posible euforia -> venta.
 
-VETO DE CONTEXTO: con 22 condiciones, algunas de bajo peso pueden alinearse
+VETO DE CONTEXTO: con 20 condiciones, algunas de bajo peso pueden alinearse
 por casualidad y activar una zona que contradice lo que dicen los
 indicadores mas fiables (RSI diario y Fear & Greed). Para evitarlo:
   - Zona de COMPRA se BLOQUEA si RSI diario >= 60 O F&G >= 60 (basta con
@@ -36,32 +36,13 @@ El veto no altera el conteo de condiciones (compra_conditions_met /
 venta_conditions_met), solo se devuelve aparte para que quien reciba el
 resultado decida no avisar, aunque el nivel siga contando internamente.
 
-Puntuacion maxima total: 22 puntos.
+Puntuacion maxima total: 20 puntos.
 """
 from report import (
-    compute_rsi, compute_macd_histogram, ema_series, compute_sma,
+    compute_rsi, compute_macd_histogram, compute_sma,
     detect_divergence, detect_sma_divergence,
     compute_bollinger, bollinger_signal, detect_volume_spike,
 )
-
-
-def compute_macd_line(closes):
-    """Devuelve la serie de la linea MACD (EMA12 - EMA26), alineada con el histograma."""
-    ema12_full = ema_series(closes, 12)
-    ema26_full = ema_series(closes, 26)
-    if not ema12_full or not ema26_full:
-        return []
-
-    offset = len(ema12_full) - len(ema26_full)
-    ema12_aligned = ema12_full[offset:]
-    macd_line = [a - b for a, b in zip(ema12_aligned, ema26_full)]
-
-    signal_line = ema_series(macd_line, 9)
-    if not signal_line:
-        return []
-
-    macd_aligned = macd_line[len(macd_line) - len(signal_line):]
-    return macd_aligned
 
 
 def macd_weakening(histogram):
@@ -96,10 +77,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     rsi_daily = compute_rsi(daily_closes)
     rsi_weekly = compute_rsi(weekly_closes)
     macd_hist = compute_macd_histogram(daily_closes)
-    macd_line = compute_macd_line(daily_closes)
     weak = macd_weakening(macd_hist)
     macd_weekly_hist = compute_macd_histogram(weekly_closes)
-    macd_weekly_line = compute_macd_line(weekly_closes)
     weak_weekly = macd_weakening(macd_weekly_hist)
     current_price = daily_closes[-1]
 
@@ -133,9 +112,6 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     rsi_weekly_compra = 1 if (rsi_weekly is not None and rsi_weekly <= 40) else 0
     rsi_weekly_venta = 1 if (rsi_weekly is not None and rsi_weekly >= 60) else 0
 
-    macd_line_compra = 1 if (len(macd_line) >= 1 and macd_line[-1] < 0) else 0
-    macd_line_venta = 1 if (len(macd_line) >= 1 and macd_line[-1] > 0) else 0
-
     fng_compra = 1 if (fng_value is not None and fng_value <= 46) else 0
     fng_venta = 1 if (fng_value is not None and fng_value >= 55) else 0
 
@@ -144,9 +120,6 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
 
     macd_hist_compra = 1 if (len(macd_hist) >= 2 and macd_hist[-1] < 0 and weak) else 0
     macd_hist_venta = 1 if (len(macd_hist) >= 2 and macd_hist[-1] >= 0 and weak) else 0
-
-    macd_line_weekly_compra = 1 if (len(macd_weekly_line) >= 1 and macd_weekly_line[-1] < 0) else 0
-    macd_line_weekly_venta = 1 if (len(macd_weekly_line) >= 1 and macd_weekly_line[-1] > 0) else 0
 
     macd_hist_weekly_compra = 1 if (len(macd_weekly_hist) >= 2 and macd_weekly_hist[-1] < 0 and weak_weekly) else 0
     macd_hist_weekly_venta = 1 if (len(macd_weekly_hist) >= 2 and macd_weekly_hist[-1] >= 0 and weak_weekly) else 0
@@ -226,9 +199,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia RSI semanal alcista", div_weekly_compra, None, None),
         ("RSI diario y semanal combinados en sobreventa", rsi_combo_compra, None, None),
         # --- MACD ---
-        ("MACD línea diario menor que 0", macd_line_compra, None, None),
         ("MACD histograma diario rojo perdiendo fuerza", macd_hist_compra, None, None),
-        ("MACD línea semanal menor que 0", macd_line_weekly_compra, None, None),
         ("MACD histograma semanal rojo perdiendo fuerza", macd_hist_weekly_compra, None, None),
         # --- Fear & Greed ---
         ("F&G menor o igual a 46", fng_compra, fng_value, ""),
@@ -258,9 +229,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia RSI semanal bajista", div_weekly_venta, None, None),
         ("RSI diario y semanal combinados en sobrecompra", rsi_combo_venta, None, None),
         # --- MACD ---
-        ("MACD línea diario mayor que 0", macd_line_venta, None, None),
         ("MACD histograma diario verde perdiendo fuerza", macd_hist_venta, None, None),
-        ("MACD línea semanal mayor que 0", macd_line_weekly_venta, None, None),
         ("MACD histograma semanal verde perdiendo fuerza", macd_hist_weekly_venta, None, None),
         # --- Fear & Greed ---
         ("F&G mayor o igual a 55", fng_venta, fng_value, ""),
