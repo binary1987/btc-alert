@@ -1,1 +1,1 @@
-{"tier_compra": 1, "tier_venta": 2, "active_compra": ["MACD histograma diario rojo perdiendo fuerza"], "active_venta": ["MACD histograma semanal verde perdiendo fuerza", "F&G mayor o igual a 55"]}
+{"tier_compra": 0, "tier_venta": 2, "active_compra": [], "active_venta": ["MACD histograma semanal verde perdiendo fuerza", "F&G mayor o igual a 55"]}
