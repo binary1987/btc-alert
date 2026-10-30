@@ -1,1 +1,1 @@
-{"tier_compra": 1, "tier_venta": 2, "active_compra": ["Bollinger diario tocando banda inferior"], "active_venta": ["Divergencia STH Realized Price bajista", "MACD histograma semanal verde perdiendo fuerza"]}
+{"tier_compra": 2, "tier_venta": 2, "active_compra": ["F&G menor o igual a 46", "Bollinger diario tocando banda inferior"], "active_venta": ["Divergencia STH Realized Price bajista", "MACD histograma semanal verde perdiendo fuerza"]}
