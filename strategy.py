@@ -9,7 +9,8 @@ sigue siendo el mismo: todas puntuan 0 o 1 por igual.
 Orden de familias en el mensaje:
   1. STH Realized Price (2): distancia + divergencia
   2. SMA (6): SMA200 diario, SMA50 semanal, SMA200 semanal + sus 3 divergencias
-  3. RSI (5): RSI diario, RSI semanal + sus 2 divergencias + combo diario+semanal
+  3. RSI (6): RSI diario, RSI semanal, RSI mensual + las 2 divergencias (diaria y
+     semanal) + combo diario+semanal
   4. MACD (2): histograma diario, histograma semanal
   5. Fear & Greed (1)
   6. Bollinger (2): diario + semanal
@@ -25,7 +26,7 @@ Los picos de volumen siguen la misma logica "contraria" que el resto: un
 pico a la baja (mucha venta) se interpreta como posible capitulacion ->
 compra; un pico al alza (mucha compra) como posible euforia -> venta.
 
-VETO DE CONTEXTO: con 20 condiciones, algunas de bajo peso pueden alinearse
+VETO DE CONTEXTO: con 21 condiciones, algunas de bajo peso pueden alinearse
 por casualidad y activar una zona que contradice lo que dicen los
 indicadores mas fiables (RSI diario y Fear & Greed). Para evitarlo:
   - Zona de COMPRA se BLOQUEA si RSI diario >= 60 O F&G >= 60 (basta con
@@ -36,7 +37,7 @@ El veto no altera el conteo de condiciones (compra_conditions_met /
 venta_conditions_met), solo se devuelve aparte para que quien reciba el
 resultado decida no avisar, aunque el nivel siga contando internamente.
 
-Puntuacion maxima total: 20 puntos.
+Puntuacion maxima total: 21 puntos.
 """
 from report import (
     compute_rsi, compute_macd_histogram, compute_sma,
@@ -56,6 +57,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
                             sth_realized_price=None, sth_divergence="sin datos suficientes",
                             sma200w_pct=None, div_sma200w="sin datos suficientes",
                             daily_volumes=None, weekly_volumes=None,
+                            monthly_closes=None, div_sma50w=None,
                             required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA, agrupadas por familia.
@@ -66,6 +68,11 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     solo cubren 365 dias y no bastan para 200 semanas).
     div_sma200w: divergencia de esa misma SMA200 semanal, tambien
     precalculada fuera.
+    monthly_closes: cierres mensuales (los mismos que usa el informe diario)
+    para el RSI mensual. Si es None, esa condicion simplemente no puntua.
+    div_sma50w: divergencia de la SMA50 semanal precalculada fuera con el
+    historico de Twelve Data (con los ~52 cierres semanales de CoinGecko no
+    hay datos suficientes). Si es None, se calcula aqui con weekly_closes.
 
     Devuelve (señal_o_None, compra_items, venta_items, veto_compra, veto_venta)
     donde cada *_items es una lista ordenada de tuplas:
@@ -76,6 +83,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     """
     rsi_daily = compute_rsi(daily_closes)
     rsi_weekly = compute_rsi(weekly_closes)
+    rsi_monthly = compute_rsi(monthly_closes) if monthly_closes else None
     macd_hist = compute_macd_histogram(daily_closes)
     weak = macd_weakening(macd_hist)
     macd_weekly_hist = compute_macd_histogram(weekly_closes)
@@ -109,8 +117,11 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     sma200w_compra = 1 if (sma200w_pct is not None and sma200w_pct <= -5) else 0
     sma200w_venta = 1 if (sma200w_pct is not None and sma200w_pct >= 100) else 0
 
-    rsi_weekly_compra = 1 if (rsi_weekly is not None and rsi_weekly <= 40) else 0
-    rsi_weekly_venta = 1 if (rsi_weekly is not None and rsi_weekly >= 60) else 0
+    rsi_weekly_compra = 1 if (rsi_weekly is not None and rsi_weekly <= 30) else 0
+    rsi_weekly_venta = 1 if (rsi_weekly is not None and rsi_weekly >= 75) else 0
+
+    rsi_monthly_compra = 1 if (rsi_monthly is not None and rsi_monthly <= 40) else 0
+    rsi_monthly_venta = 1 if (rsi_monthly is not None and rsi_monthly >= 75) else 0
 
     fng_compra = 1 if (fng_value is not None and fng_value <= 46) else 0
     fng_venta = 1 if (fng_value is not None and fng_value >= 55) else 0
@@ -126,7 +137,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
 
     # RSI diario y semanal combinados: ambos en zona extrema a la vez
     # (reutiliza los mismos umbrales de rsi_daily_compra/venta y
-    # rsi_weekly_compra/venta, que ya son 25/75 diario y 40/60 semanal)
+    # rsi_weekly_compra/venta, que ahora son 25/75 diario y 30/75 semanal)
     rsi_combo_compra = 1 if (rsi_daily_compra and rsi_weekly_compra) else 0
     rsi_combo_venta = 1 if (rsi_daily_venta and rsi_weekly_venta) else 0
 
@@ -151,7 +162,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
     div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
-    div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
+    if div_sma50w is None:
+        div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
 
     div_daily_compra = 1 if "alcista" in div_daily else 0
     div_daily_venta = 1 if "bajista" in div_daily else 0
@@ -194,7 +206,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia SMA200 semanal alcista", div_sma200w_compra, None, None),
         # --- RSI ---
         ("RSI diario menor o igual a 25", rsi_daily_compra, rsi_daily, ""),
-        ("RSI semanal menor o igual a 40", rsi_weekly_compra, rsi_weekly, ""),
+        ("RSI semanal menor o igual a 30", rsi_weekly_compra, rsi_weekly, ""),
+        ("RSI mensual menor o igual a 40", rsi_monthly_compra, rsi_monthly, ""),
         ("Divergencia RSI diario alcista", div_daily_compra, None, None),
         ("Divergencia RSI semanal alcista", div_weekly_compra, None, None),
         ("RSI diario y semanal combinados en sobreventa", rsi_combo_compra, None, None),
@@ -224,7 +237,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         ("Divergencia SMA200 semanal bajista", div_sma200w_venta, None, None),
         # --- RSI ---
         ("RSI diario mayor o igual a 75", rsi_daily_venta, rsi_daily, ""),
-        ("RSI semanal mayor o igual a 60", rsi_weekly_venta, rsi_weekly, ""),
+        ("RSI semanal mayor o igual a 75", rsi_weekly_venta, rsi_weekly, ""),
+        ("RSI mensual mayor o igual a 75", rsi_monthly_venta, rsi_monthly, ""),
         ("Divergencia RSI diario bajista", div_daily_venta, None, None),
         ("Divergencia RSI semanal bajista", div_weekly_venta, None, None),
         ("RSI diario y semanal combinados en sobrecompra", rsi_combo_venta, None, None),
