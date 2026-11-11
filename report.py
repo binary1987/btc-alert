@@ -98,6 +98,33 @@ def get_btc_weekly_closes_twelvedata(outputsize=260, retries=3, retry_delay=10):
     return []
 
 
+_WEEKLY_TD_CACHE = {}
+
+
+def get_weekly_closes_td_cached(outputsize=260):
+    """
+    Pide el historico semanal a Twelve Data UNA sola vez por ejecucion y lo
+    reutiliza (lo necesitan tanto la SMA200 semanal como la divergencia de la
+    SMA50 semanal), asi no se gasta ninguna llamada extra a la API.
+    """
+    if outputsize not in _WEEKLY_TD_CACHE:
+        _WEEKLY_TD_CACHE[outputsize] = get_btc_weekly_closes_twelvedata(outputsize=outputsize)
+    return _WEEKLY_TD_CACHE[outputsize]
+
+
+def get_sma50_weekly_divergence():
+    """
+    Divergencia de la SMA50 semanal calculada con el historico largo de
+    Twelve Data (CoinGecko solo da ~52 semanas, que no bastan para detectar
+    picos y valles sobre una SMA de 50). Devuelve None si no hay datos de
+    Twelve Data, para que quien llama use su calculo de reserva.
+    """
+    closes = get_weekly_closes_td_cached(260)
+    if not closes:
+        return None
+    return detect_sma_divergence(closes, period=50, order=2, min_distance=3)
+
+
 def get_sma200_weekly_data(current_price):
     """
     Calcula la distancia % del precio actual a la SMA200 semanal, y su
@@ -106,7 +133,7 @@ def get_sma200_weekly_data(current_price):
     datos suficientes") para que esa condicion simplemente no puntue, sin
     romper el resto del sistema.
     """
-    weekly_closes_td = get_btc_weekly_closes_twelvedata(outputsize=260)
+    weekly_closes_td = get_weekly_closes_td_cached(260)
     if len(weekly_closes_td) < 200:
         return None, "sin datos suficientes"
 
@@ -444,6 +471,29 @@ def zone_flag(rsi):
     if rsi <= 25:
         return " ⚠️ sobreventa"
     return ""
+
+
+def rsi_zone_flag(rsi, buy_threshold, sell_threshold, extreme=True):
+    """
+    Etiqueta de zona para un RSI con sus umbrales propios (los mismos que
+    usa la señal). Devuelve '' si no esta en zona, para dejar el numero limpio.
+    """
+    if rsi is None:
+        return ""
+    suffix = " extrema" if extreme else ""
+    if rsi >= sell_threshold:
+        return f" · 🔴 sobrecompra{suffix}"
+    if rsi <= buy_threshold:
+        return f" · 🟢 sobreventa{suffix}"
+    return ""
+
+
+def describe_volume_spike(spike):
+    if spike == "alcista":
+        return "🔺 pico al alza (posible euforia)"
+    if spike == "bajista":
+        return "🔻 pico a la baja (posible capitulación)"
+    return "normal"
 
 
 def ema_series(closes, period):
@@ -948,7 +998,9 @@ def main():
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
     div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
     div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
-    div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
+    div_sma50w = get_sma50_weekly_divergence()
+    if div_sma50w is None:
+        div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
     div_sth = detect_sth_divergence()
 
     boll_daily = compute_bollinger(daily_closes)
@@ -1009,7 +1061,8 @@ def main():
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price, sth_divergence=div_sth,
         sma200w_pct=sma200w_pct, div_sma200w=div_sma200w,
-        daily_volumes=daily_volumes, weekly_volumes=weekly_volumes, required=8
+        daily_volumes=daily_volumes, weekly_volumes=weekly_volumes,
+        monthly_closes=monthly_closes, div_sma50w=div_sma50w, required=8
     )
     compra_count = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
@@ -1071,49 +1124,67 @@ def main():
         daily_closes, daily_volumes,
     )
 
+    SEP = "----------------------------------"
+
+    def pct_text(pct, buy, sell):
+        if pct is None:
+            return "sin datos"
+        return f"{pct:+.1f}%{historical_zone_flag(pct, buy_threshold=buy, sell_threshold=sell)}"
+
+    def rsi_num(rsi):
+        return "sin datos" if rsi is None else f"{rsi:.0f}"
+
+    vol_spike_daily = detect_volume_spike(daily_closes, daily_volumes, avg_period=30, multiplier=2.5)
+    vol_spike_weekly = detect_volume_spike(weekly_closes, weekly_volumes, avg_period=12, multiplier=1.8)
+
+    rsi_combo_text = None
+    if rsi_daily is not None and rsi_weekly is not None:
+        if rsi_daily <= 25 and rsi_weekly <= 30:
+            rsi_combo_text = " 🎯 Diario y semanal en sobreventa a la vez"
+        elif rsi_daily >= 75 and rsi_weekly >= 75:
+            rsi_combo_text = " 🎯 Diario y semanal en sobrecompra a la vez"
+
     lines = [
         "📊 Informe diario BTC",
-        "----------------------------------",
+        SEP,
         f"Zona: {zone_text}",
-        "----------------------------------",
-        f"Fear & Greed: {fng_emoji} {fng_text} ({fng_value})",
-        f"RSI diario: {rsi_daily:.0f}{zone_flag(rsi_daily)}",
-        f"RSI semanal: {rsi_weekly:.0f}{zone_flag(rsi_weekly)}",
-        f"RSI mensual: {rsi_monthly:.0f}{zone_flag(rsi_monthly)}",
-        "----------------------------------",
-        f"MACD diario: {describe_macd(macd_daily_hist)}",
-        f"MACD semanal: {describe_macd(macd_weekly_hist)}",
-        "----------------------------------",
-        f"Divergencia RSI diario: {div_daily}",
-        f"Divergencia RSI semanal: {div_weekly}",
-        f"Divergencia SMA200 diario: {div_sma200}",
-        f"Divergencia SMA50 semanal: {div_sma50w}",
-        f"Divergencia STH Realized Price: {div_sth}",
-        "----------------------------------",
-        f"Bollinger diario: {describe_bollinger(boll_daily)}",
-        f"Bollinger semanal: {describe_bollinger(boll_weekly)}",
-        "----------------------------------",
-        f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
-        f"ATL: {atl_cycle:,.0f} $ ({atl_cycle_change:+.1f}%) ({atl_label})",
-        "----------------------------------",
+        SEP,
+        f"{fng_emoji} Fear & Greed: {fng_text} ({fng_value})",
+        SEP,
+        "STH Realized Price",
+        f" Distancia: {pct_text(sth_pct, -10, 30)}",
+        f" Divergencia: {div_sth}",
+        SEP,
+        "SMA",
+        f" SMA200 diario: {pct_text(sma200_pct, -25, 45)} · {div_sma200}",
+        f" SMA50 semanal: {pct_text(sma50w_pct, -20, 60)} · {div_sma50w}",
+        f" SMA200 semanal: {pct_text(sma200w_pct, -5, 100)} · {div_sma200w}",
+        SEP,
+        "RSI",
+        f" Diario: {rsi_num(rsi_daily)}{rsi_zone_flag(rsi_daily, 25, 75)} · {div_daily}",
+        f" Semanal: {rsi_num(rsi_weekly)}{rsi_zone_flag(rsi_weekly, 30, 75)} · {div_weekly}",
+        f" Mensual: {rsi_num(rsi_monthly)}{rsi_zone_flag(rsi_monthly, 40, 75, extreme=False)}",
     ]
-
-    if sth_pct is not None:
-        flag = historical_zone_flag(sth_pct, buy_threshold=-10, sell_threshold=30)
-        lines.append(f"Distancia a STH Realized Price: {sth_pct:+.1f}%{flag}")
-    if sma200_pct is not None:
-        flag = historical_zone_flag(sma200_pct, buy_threshold=-25, sell_threshold=45)
-        lines.append(f"Distancia a SMA200 diario: {sma200_pct:+.1f}%{flag}")
-    if sma50w_pct is not None:
-        flag = historical_zone_flag(sma50w_pct, buy_threshold=-20, sell_threshold=60)
-        lines.append(f"Distancia a SMA50 semanal: {sma50w_pct:+.1f}%{flag}")
-    if sma200w_pct is not None:
-        flag = historical_zone_flag(sma200w_pct, buy_threshold=-5, sell_threshold=100)
-        lines.append(f"Distancia a SMA200 semanal: {sma200w_pct:+.1f}%{flag}")
-        lines.append(f"Divergencia SMA200 semanal: {div_sma200w}")
+    if rsi_combo_text:
+        lines.append(rsi_combo_text)
 
     lines += [
-        "----------------------------------",
+        SEP,
+        "MACD",
+        f" Diario: {describe_macd(macd_daily_hist)}",
+        f" Semanal: {describe_macd(macd_weekly_hist)}",
+        SEP,
+        "Bollinger",
+        f" Diario: {describe_bollinger(boll_daily)}",
+        f" Semanal: {describe_bollinger(boll_weekly)}",
+        SEP,
+        "Volumen",
+        f" Diario: {describe_volume_spike(vol_spike_daily)}",
+        f" Semanal: {describe_volume_spike(vol_spike_weekly)}",
+        SEP,
+        f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
+        f"ATL: {atl_cycle:,.0f} $ ({atl_cycle_change:+.1f}%) ({atl_label})",
+        SEP,
         f"Tendencia corto plazo: {corto}",
         f"Tendencia medio plazo: {medio}",
         f"Tendencia largo plazo: {largo}",
