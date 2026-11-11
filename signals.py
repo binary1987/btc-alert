@@ -9,7 +9,7 @@ from report import (
     get_market_chart, group_last, group_sum, get_fear_greed, get_sth_realized_price,
     append_sth_history, detect_sth_divergence, get_sma200_weekly_data,
     get_btc_daily_ohlc_twelvedata, compute_last_closed_week_range,
-    compute_last_closed_month_range,
+    compute_last_closed_month_range, get_sma50_weekly_divergence,
 )
 from strategy import evaluate_strict_signal
 
@@ -608,6 +608,7 @@ def main():
     daily_volumes = [v for _, v in volumes]
     weekly_closes = group_last(prices, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
     weekly_volumes = group_sum(volumes, lambda dt: (dt.isocalendar()[0], dt.isocalendar()[1]))
+    monthly_closes = group_last(prices, lambda dt: (dt.year, dt.month))
 
     check_weekly_breakout(daily_closes[-1])
     check_monthly_breakout(daily_closes[-1])
@@ -631,6 +632,12 @@ def main():
     sma200w_pct, div_sma200w = get_sma200_weekly_data(daily_closes[-1])
     print(f"SMA200 semanal: {sma200w_pct}, divergencia: {div_sma200w}")
 
+    # Divergencia SMA50 semanal con el historico largo de Twelve Data (ya
+    # descargado arriba para la SMA200 semanal, sin llamada extra). Si falla,
+    # strategy.py la calcula con los cierres semanales de CoinGecko.
+    div_sma50w = get_sma50_weekly_divergence()
+    print(f"Divergencia SMA50 semanal: {div_sma50w}")
+
     _, compra_items, venta_items, veto_compra, veto_venta = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price,
@@ -639,6 +646,8 @@ def main():
         div_sma200w=div_sma200w,
         daily_volumes=daily_volumes,
         weekly_volumes=weekly_volumes,
+        monthly_closes=monthly_closes,
+        div_sma50w=div_sma50w,
         required=8,
     )
 
