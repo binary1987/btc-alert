@@ -1061,11 +1061,18 @@ def main():
     rsi_weekly = get_rsi_weekly(weekly_closes)
     rsi_monthly = get_rsi_monthly(monthly_closes)
 
+    # Serie semanal larga de Twelve Data (260 semanas) para MACD semanal y
+    # divergencia del RSI semanal: con las ~53 semanas de CoinGecko los
+    # suavizados no convergen. Si Twelve Data falla, se usa la de CoinGecko.
+    weekly_closes_long = get_weekly_closes_td_cached(260)
+    if len(weekly_closes_long) < 60:
+        weekly_closes_long = weekly_closes
+
     macd_daily_hist = compute_macd_histogram(daily_closes)
-    macd_weekly_hist = compute_macd_histogram(weekly_closes)
+    macd_weekly_hist = compute_macd_histogram(weekly_closes_long)
 
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
-    div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
+    div_weekly = detect_divergence(weekly_closes_long, order=2, min_distance=3)
     div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
     div_sma50w = get_sma50_weekly_divergence()
     if div_sma50w is None:
@@ -1132,7 +1139,8 @@ def main():
         sma200w_pct=sma200w_pct, div_sma200w=div_sma200w,
         daily_volumes=daily_volumes, weekly_volumes=weekly_volumes,
         monthly_closes=monthly_closes, div_sma50w=div_sma50w,
-        rsi_weekly_value=rsi_weekly, rsi_monthly_value=rsi_monthly, required=8
+        rsi_weekly_value=rsi_weekly, rsi_monthly_value=rsi_monthly,
+        weekly_closes_long=weekly_closes_long, required=8
     )
     compra_count = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
