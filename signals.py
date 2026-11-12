@@ -10,6 +10,7 @@ from report import (
     append_sth_history, detect_sth_divergence, get_sma200_weekly_data,
     get_btc_daily_ohlc_twelvedata, compute_last_closed_week_range,
     compute_last_closed_month_range, get_sma50_weekly_divergence,
+    get_rsi_weekly, get_rsi_monthly,
 )
 from strategy import evaluate_strict_signal
 
@@ -638,6 +639,11 @@ def main():
     div_sma50w = get_sma50_weekly_divergence()
     print(f"Divergencia SMA50 semanal: {div_sma50w}")
 
+    # RSI semanal y mensual con historico largo de Twelve Data (como TradingView)
+    rsi_weekly_value = get_rsi_weekly(weekly_closes)
+    rsi_monthly_value = get_rsi_monthly(monthly_closes)
+    print(f"RSI semanal: {rsi_weekly_value}, RSI mensual: {rsi_monthly_value}")
+
     _, compra_items, venta_items, veto_compra, veto_venta = evaluate_strict_signal(
         daily_closes, weekly_closes, fng_value,
         sth_realized_price=sth_realized_price,
@@ -648,6 +654,8 @@ def main():
         weekly_volumes=weekly_volumes,
         monthly_closes=monthly_closes,
         div_sma50w=div_sma50w,
+        rsi_weekly_value=rsi_weekly_value,
+        rsi_monthly_value=rsi_monthly_value,
         required=8,
     )
 
