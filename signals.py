@@ -10,7 +10,7 @@ from report import (
     append_sth_history, detect_sth_divergence, get_sma200_weekly_data,
     get_btc_daily_ohlc_twelvedata, compute_last_closed_week_range,
     compute_last_closed_month_range, get_sma50_weekly_divergence,
-    get_rsi_weekly, get_rsi_monthly,
+    get_rsi_weekly, get_rsi_monthly, get_weekly_closes_td_cached,
 )
 from strategy import evaluate_strict_signal
 
@@ -656,6 +656,7 @@ def main():
         div_sma50w=div_sma50w,
         rsi_weekly_value=rsi_weekly_value,
         rsi_monthly_value=rsi_monthly_value,
+        weekly_closes_long=get_weekly_closes_td_cached(260),
         required=8,
     )
 
