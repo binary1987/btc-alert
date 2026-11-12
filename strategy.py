@@ -59,6 +59,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
                             daily_volumes=None, weekly_volumes=None,
                             monthly_closes=None, div_sma50w=None,
                             rsi_weekly_value=None, rsi_monthly_value=None,
+                            weekly_closes_long=None,
                             required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA, agrupadas por familia.
@@ -76,6 +77,9 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     Con los cierres de CoinGecko (~53 semanas, ~13 meses) el suavizado del RSI
     no converge y se desvia mucho, sobre todo el mensual. Si son None, se
     calculan aqui con weekly_closes / monthly_closes como reserva.
+    weekly_closes_long: serie semanal larga de Twelve Data (260 semanas) para
+    el MACD semanal y la divergencia del RSI semanal, por la misma razon. Si es
+    None o muy corta, se usa weekly_closes.
     div_sma50w: divergencia de la SMA50 semanal precalculada fuera con el
     historico de Twelve Data (con los ~52 cierres semanales de CoinGecko no
     hay datos suficientes). Si es None, se calcula aqui con weekly_closes.
@@ -95,7 +99,8 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
         rsi_monthly = compute_rsi(monthly_closes) if monthly_closes else None
     macd_hist = compute_macd_histogram(daily_closes)
     weak = macd_weakening(macd_hist)
-    macd_weekly_hist = compute_macd_histogram(weekly_closes)
+    long_weekly = weekly_closes_long if (weekly_closes_long and len(weekly_closes_long) >= 60) else weekly_closes
+    macd_weekly_hist = compute_macd_histogram(long_weekly)
     weak_weekly = macd_weakening(macd_weekly_hist)
     current_price = daily_closes[-1]
 
@@ -169,7 +174,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
 
     # --- Condiciones de divergencia (independientes del umbral de %) ---
     div_daily = detect_divergence(daily_closes, order=3, min_distance=5)
-    div_weekly = detect_divergence(weekly_closes, order=2, min_distance=3)
+    div_weekly = detect_divergence(long_weekly, order=2, min_distance=3)
     div_sma200 = detect_sma_divergence(daily_closes, period=200, order=3, min_distance=5)
     if div_sma50w is None:
         div_sma50w = detect_sma_divergence(weekly_closes, period=50, order=2, min_distance=3)
