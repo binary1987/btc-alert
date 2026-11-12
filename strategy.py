@@ -58,6 +58,7 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
                             sma200w_pct=None, div_sma200w="sin datos suficientes",
                             daily_volumes=None, weekly_volumes=None,
                             monthly_closes=None, div_sma50w=None,
+                            rsi_weekly_value=None, rsi_monthly_value=None,
                             required=5):
     """
     Evalua las condiciones de COMPRA y de VENTA, agrupadas por familia.
@@ -70,6 +71,11 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     precalculada fuera.
     monthly_closes: cierres mensuales (los mismos que usa el informe diario)
     para el RSI mensual. Si es None, esa condicion simplemente no puntua.
+    rsi_weekly_value / rsi_monthly_value: RSI semanal y mensual ya calculados
+    fuera con el historico largo de Twelve Data (iguales a los de TradingView).
+    Con los cierres de CoinGecko (~53 semanas, ~13 meses) el suavizado del RSI
+    no converge y se desvia mucho, sobre todo el mensual. Si son None, se
+    calculan aqui con weekly_closes / monthly_closes como reserva.
     div_sma50w: divergencia de la SMA50 semanal precalculada fuera con el
     historico de Twelve Data (con los ~52 cierres semanales de CoinGecko no
     hay datos suficientes). Si es None, se calcula aqui con weekly_closes.
@@ -82,8 +88,11 @@ def evaluate_strict_signal(daily_closes, weekly_closes, fng_value,
     divergencias).
     """
     rsi_daily = compute_rsi(daily_closes)
-    rsi_weekly = compute_rsi(weekly_closes)
-    rsi_monthly = compute_rsi(monthly_closes) if monthly_closes else None
+    rsi_weekly = rsi_weekly_value if rsi_weekly_value is not None else compute_rsi(weekly_closes)
+    if rsi_monthly_value is not None:
+        rsi_monthly = rsi_monthly_value
+    else:
+        rsi_monthly = compute_rsi(monthly_closes) if monthly_closes else None
     macd_hist = compute_macd_histogram(daily_closes)
     weak = macd_weakening(macd_hist)
     macd_weekly_hist = compute_macd_histogram(weekly_closes)
