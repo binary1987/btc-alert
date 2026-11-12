@@ -98,7 +98,45 @@ def get_btc_weekly_closes_twelvedata(outputsize=260, retries=3, retry_delay=10):
     return []
 
 
+def get_btc_monthly_closes_twelvedata(outputsize=100, retries=3, retry_delay=10):
+    """
+    Historico mensual de BTC/USD via Twelve Data (cierres, orden cronologico
+    ascendente). Se usa para el RSI mensual: con los ~13 cierres mensuales
+    que salen de los 365 dias de CoinGecko el RSI(14) se desvia mucho del que
+    ves en TradingView, porque el suavizado de Wilder necesita bastante mas
+    historico para converger.
+    """
+    api_key = os.environ.get("TWELVEDATA_API_KEY")
+    params = urllib.parse.urlencode({
+        "symbol": "BTC/USD",
+        "interval": "1month",
+        "outputsize": outputsize,
+        "order": "ASC",
+        "apikey": api_key,
+    })
+    url = f"https://api.twelvedata.com/time_series?{params}"
+
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            if "values" not in data:
+                raise ValueError(f"respuesta sin 'values': {data}")
+            return [float(v["close"]) for v in data["values"]]
+        except Exception as e:
+            last_error = e
+            print(f"Aviso: fallo al pedir BTC/USD mensual de Twelve Data (intento {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    print(f"Aviso: no se pudo obtener el historico mensual de Twelve Data tras {retries} intentos ({last_error})")
+    return []
+
+
 _WEEKLY_TD_CACHE = {}
+_MONTHLY_TD_CACHE = {}
 
 
 def get_weekly_closes_td_cached(outputsize=260):
@@ -110,6 +148,37 @@ def get_weekly_closes_td_cached(outputsize=260):
     if outputsize not in _WEEKLY_TD_CACHE:
         _WEEKLY_TD_CACHE[outputsize] = get_btc_weekly_closes_twelvedata(outputsize=outputsize)
     return _WEEKLY_TD_CACHE[outputsize]
+
+
+def get_monthly_closes_td_cached(outputsize=100):
+    """Igual que el semanal: una sola peticion mensual por ejecucion."""
+    if outputsize not in _MONTHLY_TD_CACHE:
+        _MONTHLY_TD_CACHE[outputsize] = get_btc_monthly_closes_twelvedata(outputsize=outputsize)
+    return _MONTHLY_TD_CACHE[outputsize]
+
+
+def get_rsi_weekly(fallback_weekly_closes):
+    """
+    RSI semanal con el historico largo de Twelve Data (260 semanas, ya
+    descargado para la SMA200 semanal, sin llamada extra), que coincide con
+    el de TradingView. Si Twelve Data falla, usa los cierres semanales de
+    CoinGecko como reserva (menos preciso).
+    """
+    closes = get_weekly_closes_td_cached(260)
+    if len(closes) >= 30:
+        return compute_rsi(closes)
+    return compute_rsi(fallback_weekly_closes)
+
+
+def get_rsi_monthly(fallback_monthly_closes):
+    """
+    RSI mensual con el historico largo de Twelve Data. Si falla, usa los
+    ~13 cierres mensuales de CoinGecko como reserva (aproximado).
+    """
+    closes = get_monthly_closes_td_cached(100)
+    if len(closes) >= 30:
+        return compute_rsi(closes)
+    return compute_rsi(fallback_monthly_closes)
 
 
 def get_sma50_weekly_divergence():
@@ -989,8 +1058,8 @@ def main():
     monthly_closes = group_last(prices, lambda dt: (dt.year, dt.month))
 
     rsi_daily = compute_rsi(daily_closes)
-    rsi_weekly = compute_rsi(weekly_closes)
-    rsi_monthly = compute_rsi(monthly_closes)
+    rsi_weekly = get_rsi_weekly(weekly_closes)
+    rsi_monthly = get_rsi_monthly(monthly_closes)
 
     macd_daily_hist = compute_macd_histogram(daily_closes)
     macd_weekly_hist = compute_macd_histogram(weekly_closes)
@@ -1062,7 +1131,8 @@ def main():
         sth_realized_price=sth_realized_price, sth_divergence=div_sth,
         sma200w_pct=sma200w_pct, div_sma200w=div_sma200w,
         daily_volumes=daily_volumes, weekly_volumes=weekly_volumes,
-        monthly_closes=monthly_closes, div_sma50w=div_sma50w, required=8
+        monthly_closes=monthly_closes, div_sma50w=div_sma50w,
+        rsi_weekly_value=rsi_weekly, rsi_monthly_value=rsi_monthly, required=8
     )
     compra_count = sum(1 for _, pts, _, _ in compra_items if pts >= 1)
     venta_count = sum(1 for _, pts, _, _ in venta_items if pts >= 1)
