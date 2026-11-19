@@ -38,14 +38,32 @@ def cg_headers():
     return {"x-cg-demo-api-key": api_key} if api_key else {}
 
 
-def get_market_chart(days=365):
-    """Devuelve (prices, volumes), ambos como listas de [timestamp_ms, valor]."""
+def get_market_chart(days=365, retries=3, retry_delay=10):
+    """
+    Devuelve (prices, volumes), ambos como listas de [timestamp_ms, valor].
+
+    Reintenta ante fallos de red o timeout (hasta 'retries' veces, con
+    'retry_delay' segundos entre intentos), para que un tropiezo puntual de
+    CoinGecko no tumbe el job. Si tras los reintentos sigue fallando, lanza
+    la excepcion como antes.
+    """
     params = urllib.parse.urlencode({"vs_currency": "usd", "days": days})
     url = f"{MARKET_CHART_URL}?{params}"
-    req = urllib.request.Request(url, headers=cg_headers())
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read().decode())
-    return data["prices"], data["total_volumes"]
+
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers=cg_headers())
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read().decode())
+            return data["prices"], data["total_volumes"]
+        except Exception as e:
+            last_error = e
+            print(f"Aviso: fallo al pedir market_chart a CoinGecko (intento {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    raise last_error
 
 
 def get_price_range(from_ts, to_ts):
