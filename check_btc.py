@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import os
 import json
+import time
 import smtplib
 from email.mime.text import MIMEText
+import urllib.error
 import urllib.request
 import urllib.parse
 
@@ -40,14 +42,37 @@ def write_shared_price_history(daily_closes):
         json.dump(data, f)
 
 
-def send_telegram(msg):
+def send_telegram(msg, retries=3):
+    """
+    Envia el mensaje a Telegram con reintentos. Un fallo puntual de red
+    (timeout, 5xx, 429) ya no tumba el job a la primera: se reintenta con una
+    pausa creciente. Un error permanente (token o chat_id mal, mensaje mal
+    formado) no se reintenta porque fallaria igual. Si tras los reintentos
+    sigue fallando, se lanza la excepcion como antes: el job falla, el
+    escalon no se guarda y en la siguiente ejecucion se vuelve a intentar.
+    """
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": chat_id, "text": msg}).encode()
-    urllib.request.urlopen(url, data=data, timeout=10)
+
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            urllib.request.urlopen(url, data=data, timeout=20)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code != 429 and e.code < 500:
+                raise
+            last_error = e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_error = e
+        print(f"Aviso: fallo al enviar a Telegram (intento {attempt}/{retries}): {last_error}")
+        if attempt < retries:
+            time.sleep(3 * attempt)
+    raise last_error
 
 
 def send_email(msg):
@@ -60,7 +85,7 @@ def send_email(msg):
     mail["Subject"] = "Alerta BTC"
     mail["From"] = user
     mail["To"] = to
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as s:
         s.login(user, pwd)
         s.sendmail(user, [to], mail.as_string())
 
@@ -88,7 +113,13 @@ def main():
             msg = f"🟠 BTC 📉 de {last:,} $ (actual: {price:,.0f} $)"
         print("AVISO:", msg)
         send_telegram(msg)
-        send_email(msg)
+        # El email es secundario: si falla (Gmail, red) no debe impedir que
+        # se guarde el escalon, porque Telegram ya ha salido y se duplicaria
+        # el aviso en la siguiente ejecucion.
+        try:
+            send_email(msg)
+        except Exception as e:
+            print(f"Aviso: no se pudo enviar el email ({e})")
         write_last_threshold(threshold)
 
 
