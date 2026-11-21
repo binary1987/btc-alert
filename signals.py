@@ -17,7 +17,7 @@ from report import (
 from strategy import evaluate_strict_signal
 
 STATE_FILE = "last_tier.txt"
-MIN_TIER_TO_NOTIFY = 5  # a partir de 5 condiciones activas empezamos a avisar
+MIN_TIER_TO_NOTIFY = 4  # a partir de 4 condiciones activas empezamos a avisar
 
 WEEKLY_RANGE_STATE_FILE = "weekly_range_state.json"
 MONTHLY_RANGE_STATE_FILE = "monthly_range_state.json"
