@@ -1246,6 +1246,24 @@ def main():
 
     SEP = "----------------------------------"
 
+    # Rachas semanal y mensual (las que ya cuenta signals.py y guarda en
+    # weekly_streak_state.json / monthly_streak_state.json). Solo cuentan
+    # periodos YA cerrados. Si algo falla al leerlas, el informe sale igual
+    # sin ese bloque.
+    streak_lines = []
+    try:
+        from signals import describe_weekly_streak, describe_monthly_streak
+        streak_lines = [
+            "Rachas (periodos ya cerrados)",
+            f" Semanal 📈: {describe_weekly_streak('up')}",
+            f" Semanal 📉: {describe_weekly_streak('down')}",
+            f" Mensual 📈: {describe_monthly_streak('up')}",
+            f" Mensual 📉: {describe_monthly_streak('down')}",
+            SEP,
+        ]
+    except Exception as e:
+        print(f"Aviso: no se pudieron leer las rachas ({e}), se omite ese bloque del informe")
+
     def pct_text(pct, buy, sell):
         if pct is None:
             return "sin datos"
@@ -1305,6 +1323,9 @@ def main():
         f"ATH: {ath:,.0f} $ ({ath_change:.1f}%)",
         f"ATL: {atl_cycle:,.0f} $ ({atl_cycle_change:+.1f}%) ({atl_label})",
         SEP,
+    ]
+    lines += streak_lines
+    lines += [
         f"Tendencia corto plazo: {corto}",
         f"Tendencia medio plazo: {medio}",
         f"Tendencia largo plazo: {largo}",
