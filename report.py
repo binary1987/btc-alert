@@ -1192,7 +1192,7 @@ def main():
     last_report_compra, last_report_venta = read_last_report_tiers()
     trend_word = ""
 
-    MIN_ZONE_TIER = 5
+    MIN_ZONE_TIER = 4
     compra_eligible = compra_count >= MIN_ZONE_TIER and not veto_compra
     venta_eligible = venta_count >= MIN_ZONE_TIER and not veto_venta
 
