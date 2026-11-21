@@ -1,1 +1,1 @@
-{"day": "2026-11-20", "day_up": null, "day_down": 6.093307081061201, "week": "2026-W47", "week_up": null, "week_down": 15.680637762988429}
+{"day": "2026-11-21", "day_up": null, "day_down": 5.05202478313625, "week": "2026-W47", "week_up": null, "week_down": 15.680637762988429}
