@@ -1143,11 +1143,25 @@ def main():
         ath_dt = datetime.strptime(ath_date, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
         ath_ts = int(ath_dt.timestamp())
         now_ts = int(datetime.now(timezone.utc).timestamp())
-        range_prices = get_price_range(ath_ts, now_ts)
-        cycle_closes = [p for _, p in range_prices]
-        if not cycle_closes:
-            raise ValueError("rango vacio")
-        atl_cycle = min(cycle_closes)
+        atl_cycle = None
+        # Minimo REAL intradiario (low) desde el ATH, via Twelve Data. CoinGecko
+        # solo da cierres, asi que se perdian las mechas (p. ej. 58.5k de cierre
+        # vs 55.1k de minimo real en TradingView).
+        try:
+            days_since_ath = (now_ts - ath_ts) // 86400 + 3
+            ohlc = get_btc_daily_ohlc_twelvedata(outputsize=min(days_since_ath, 5000))
+            ath_day = ath_dt.strftime("%Y-%m-%d")
+            lows = [low for d, _, low in ohlc if d[:10] >= ath_day]
+            if lows:
+                atl_cycle = min(min(lows), current_price)
+        except Exception as e:
+            print(f"Aviso: ATL con minimos reales fallo ({e}), se usan cierres")
+        if atl_cycle is None:
+            range_prices = get_price_range(ath_ts, now_ts)
+            cycle_closes = [p for _, p in range_prices]
+            if not cycle_closes:
+                raise ValueError("rango vacio")
+            atl_cycle = min(min(cycle_closes), current_price)
         atl_label = "mínimo desde el último ATH"
     except Exception as e:
         print(f"Aviso: no se pudo calcular el ATL del ciclo ({e}), usando fallback de 12 meses")
