@@ -1,1 +1,1 @@
-{"tier_compra": 4, "tier_venta": 0, "active_compra": ["Distancia a STH Realized Price menor o igual a -10%", "SMA200 semanal menor o igual a -5%", "MACD histograma diario rojo perdiendo fuerza", "F&G menor o igual a 46"], "active_venta": []}
+{"tier_compra": 3, "tier_venta": 1, "active_compra": ["Distancia a STH Realized Price menor o igual a -10%", "SMA200 semanal menor o igual a -5%", "F&G menor o igual a 46"], "active_venta": ["MACD histograma diario verde perdiendo fuerza"]}
